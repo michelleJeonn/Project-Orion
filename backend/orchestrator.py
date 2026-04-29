@@ -25,6 +25,7 @@ from backend.db.session import AsyncSessionLocal
 from backend.db import crud
 from backend.utils.logger import get_logger
 from backend.config import settings
+from backend.analytics.snowflake_analytics import snowflake_analytics
 
 logger = get_logger(__name__)
 
@@ -126,6 +127,20 @@ class CryosisOrchestrator:
                             f"{target.gene_symbol}: best ΔG = {results[0].binding_affinity_kcal:.1f} kcal/mol"
                         )
 
+                # ── Snowflake: store molecule features ───────────────────── #
+                try:
+                    sf_payload = {
+                        uid: [r.model_dump(mode="json") for r in results]
+                        for uid, results in docking_results.items()
+                    }
+                    snowflake_analytics.store_molecules(
+                        job_id=job_id,
+                        disease=disease.normalized_name or disease_query,
+                        docking_results_per_target=sf_payload,
+                    )
+                except Exception as sf_exc:
+                    logger.warning(f"Snowflake molecule storage skipped: {sf_exc}")
+
                 # ── Stage 4: Insight Synthesis ───────────────────────────── #
                 await progress("Synthesizing insights and generating report...", 87, PipelineStage.INSIGHT_SYNTHESIS)
 
@@ -144,6 +159,16 @@ class CryosisOrchestrator:
                 synthesis_comp.pipeline_start_time = start_time.isoformat()
                 report_data: Data = await synthesis_comp.build_report()
                 report = CryosisReport.model_validate(report_data.data)
+
+                # ── Snowflake: store report for RAG search ───────────────── #
+                try:
+                    snowflake_analytics.store_report(
+                        job_id=job_id,
+                        disease=report.disease_name or disease_query,
+                        report=report.model_dump(mode="json"),
+                    )
+                except Exception as sf_exc:
+                    logger.warning(f"Snowflake report storage skipped: {sf_exc}")
 
                 # ── Persist completed report ─────────────────────────────── #
                 await crud.complete_job(db, job_id, report.model_dump(mode="json"))
