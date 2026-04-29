@@ -1,0 +1,6 @@
+{
+  "source_directories": [{"root": "."}],
+  "search_path": ["venv/lib/python3.12/site-packages"],
+  "python_version": "3.12",
+  "exclude": ["venv/.*"]
+}

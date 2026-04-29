@@ -1,0 +1,51 @@
+# Core
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# HTTP / Async
+httpx==0.27.2
+aiofiles==24.1.0
+anyio==4.6.2
+
+# Anthropic Claude API
+anthropic==0.40.0
+
+# Cheminformatics
+rdkit==2026.3.1
+numpy==2.2.4
+scipy==1.15.2
+
+# Molecular docking (AutoDock Vina binary installed separately — see README)
+# vina and meeko require Boost/system dependencies on Windows
+meeko==0.5.0
+
+# Data
+pandas==2.2.3
+biopython==1.85
+
+# MCP (optional — only needed to run backend/mcp_server.py)
+fastmcp>=2.0
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.13.3
+asyncpg==0.30.0
+greenlet==3.1.1
+
+# Caching & background jobs
+diskcache==5.6.3
+
+# Visualization / export
+Pillow==10.4.0
+reportlab==4.2.5
+
+# Langflow — visual AI pipeline orchestration
+langflow==1.9.1
+
+# Dev / testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2
