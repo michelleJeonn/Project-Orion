@@ -39,7 +39,7 @@ export function LandingPage() {
       {/* ── z=2: purple smoke — sits behind paths and gradient ── */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 2, pointerEvents: 'none',
-        opacity: transitioning ? 0 : 1,
+        opacity: transitioning ? 0 : 0.35,
         transition: 'opacity 0.5s ease-out',
       }}>
         <SmokeBackground smokeColor="#7B2FFF" />
@@ -72,10 +72,11 @@ export function LandingPage() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <div style={{
             fontFamily: 'var(--mono)',
-            fontSize: 'clamp(0.7rem, 1.2vw, 1rem)',
+            fontSize: 'clamp(0.9rem, 1.4vw, 1.1rem)',
+            fontWeight: 700,
             letterSpacing: '0.35em',
             textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.45)',
+            color: 'rgba(255,255,255,0.65)',
             marginBottom: '0.5rem',
             marginLeft: 0,
           }}>
@@ -163,7 +164,7 @@ export function LandingPage() {
         justifyContent: 'center',
       }}>
         <div style={{ position: 'relative', zIndex: 5, transform: 'scale(2.2)', transformOrigin: 'center center' }}>
-          <MoleculeAnimation speedA={0.006} speedB={0.003} />
+          <MoleculeAnimation speedA={0.01} speedB={0.007} />
         </div>
       </div>
 
