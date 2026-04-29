@@ -1988,7 +1988,7 @@ function ChemicalIntelligencePane({ jobId }: { jobId?: string }) {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: ciTab === 'space' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
         {ciTab === 'space' && (
           jobId
             ? <ChemicalSpace3D jobId={jobId} />

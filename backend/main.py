@@ -27,7 +27,7 @@ from backend.config import settings
 from backend.utils.logger import get_logger
 from backend.services.arxiv import arxiv_client
 from backend.services.alphafold import alphafold_client
-from backend.services.snowflake_client import init_snowflake_tables
+from backend.services.snowflake_client import init_snowflake_tables, status as snowflake_status, is_available as snowflake_is_available
 from backend.analytics.snowflake_analytics import snowflake_analytics
 from backend.db.session import get_db, init_db, engine
 from backend.db import crud
@@ -91,6 +91,13 @@ class DiscoverResponse(BaseModel):
     stream_url: str
     status_url: str
     results_url: str
+
+
+class SnowflakeSeedRequest(BaseModel):
+    job_id: str = Field(default="snowflake-test-job")
+    disease: str = Field(default="Snowflake Connectivity Test")
+    target: str = Field(default="TEST1")
+    n_molecules: int = Field(default=6, ge=3, le=30)
 
 
 # ── Background task ────────────────────────────────────────────────────── #
@@ -389,13 +396,162 @@ async def get_alphafold_structure(uniprot_id: str):
 
 # ── Snowflake Chemical Intelligence Routes ────────────────────────────────── #
 
+@app.get("/api/snowflake/status")
+async def get_snowflake_status():
+    """
+    Return Snowflake readiness diagnostics and a connection probe.
+    Useful for testing config/connectivity without running the full pipeline.
+    """
+    return snowflake_status()
+
+
+@app.get("/api/snowflake/debug")
+async def snowflake_debug():
+    """
+    Raw diagnostic: checks if MOLECULE_FEATURES table exists, counts rows,
+    and surfaces the actual exception if anything fails.
+    """
+    from backend.services.snowflake_client import get_connection
+    results: dict = {}
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM MOLECULE_FEATURES")
+            results["molecule_features_count"] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM GENESIS_REPORTS")
+            results["genesis_reports_count"] = cur.fetchone()[0]
+            cur.execute("SHOW TABLES LIKE 'MOLECULE_FEATURES'")
+            results["table_exists"] = cur.fetchone() is not None
+            # Try a test INSERT to surface any column/type errors
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO MOLECULE_FEATURES (
+                        job_id, disease, target, molecule_id, smiles,
+                        qed, logp, tpsa, sa_score, binding_score,
+                        molecular_weight, h_donors, h_acceptors,
+                        rotatable_bonds, generation_method
+                    ) VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s
+                    )
+                    """,
+                    ("debug-job", "debug", "TEST", "DEBUG-M001", "CC",
+                     0.5, 1.0, 80.0, 2.5, -7.0,
+                     250.0, 2, 4,
+                     3, "debug"),
+                )
+                conn.rollback()
+                results["test_insert"] = "ok"
+            except Exception as ie:
+                results["test_insert"] = f"FAILED: {ie}"
+
+            # Test store_molecules end-to-end with realistic data
+            try:
+                from backend.analytics.snowflake_analytics import snowflake_analytics
+                snowflake_analytics.store_molecules(
+                    job_id="debug-store-test",
+                    disease="Debug Disease",
+                    docking_results_per_target={"TEST1": [{
+                        "binding_affinity_kcal": -7.5,
+                        "molecule": {
+                            "molecule_id": "DBG-M001",
+                            "smiles": "CC(=O)Nc1ccc(O)cc1",
+                            "generation_method": "debug",
+                            "admet": {
+                                "qed_score": 0.55, "log_p": 0.9, "tpsa": 49.3,
+                                "synthetic_accessibility": 1.5, "mw": 151.16,
+                                "hbd": 2, "hba": 2, "rotatable_bonds": 2,
+                            },
+                        },
+                    }]},
+                )
+                cur2 = conn.cursor()
+                cur2.execute("SELECT COUNT(*) FROM MOLECULE_FEATURES WHERE job_id = 'debug-store-test'")
+                cnt = cur2.fetchone()[0]
+                cur2.execute("DELETE FROM MOLECULE_FEATURES WHERE job_id = 'debug-store-test'")
+                conn.commit()
+                cur2.close()
+                results["store_molecules_test"] = f"ok — {cnt} row(s) written"
+            except Exception as se:
+                results["store_molecules_test"] = f"FAILED: {se}"
+            cur.close()
+        results["ok"] = True
+    except Exception as exc:
+        results["ok"] = False
+        results["error"] = str(exc)
+    return results
+
+
+@app.post("/api/snowflake/seed_test_data")
+async def seed_snowflake_test_data(req: SnowflakeSeedRequest):
+    """
+    Insert synthetic Snowflake rows so Chemical Intelligence can be tested
+    without running the full discovery pipeline.
+    """
+    sf_status = snowflake_status()
+    if not sf_status.get("available"):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "Snowflake unavailable", "status": sf_status},
+        )
+
+    rows = []
+    for i in range(req.n_molecules):
+        rows.append({
+            "binding_affinity_kcal": round(-6.2 - i * 0.55, 2),
+            "molecule": {
+                "molecule_id": f"{req.job_id}-M{i+1:03d}",
+                "smiles": f"CCN(CC)C(=O)C{i+1}",
+                "generation_method": "seed_test",
+                "admet": {
+                    "qed_score": round(0.42 + i * 0.04, 3),
+                    "log_p": round(1.4 + i * 0.2, 3),
+                    "tpsa": round(72.0 + i * 1.5, 2),
+                    "synthetic_accessibility": round(2.2 + i * 0.12, 2),
+                    "mw": round(280.0 + i * 8.5, 2),
+                    "hbd": 1 + (i % 2),
+                    "hba": 4 + (i % 3),
+                    "rotatable_bonds": 3 + (i % 4),
+                },
+            },
+        })
+
+    snowflake_analytics.store_molecules(
+        job_id=req.job_id,
+        disease=req.disease,
+        docking_results_per_target={req.target: rows},
+    )
+    snowflake_analytics.store_report(
+        job_id=req.job_id,
+        disease=req.disease,
+        report={
+            "executive_summary": f"Seed report for {req.disease}.",
+            "methodology_notes": "Synthetic seed row for Snowflake CI verification.",
+            "safety_flags": [],
+            "limitations": [],
+            "target_insights": [{
+                "pathway_relevance": f"{req.target} pathway modulation for UI smoke test.",
+                "mechanism_of_action": f"Seed mechanism for {req.target}.",
+                "clinical_context": "Synthetic context only.",
+            }],
+            "top_candidates": [{
+                "explanation": "Synthetic candidate rationale.",
+            }],
+        },
+    )
+    return {"ok": True, "job_id": req.job_id, "seeded_molecules": req.n_molecules}
+
+
 @app.get("/api/snowflake/similar_molecules/{job_id}/{molecule_id}")
-async def similar_molecules(job_id: str, molecule_id: str, top_k: int = 10):
+async def similar_molecules(job_id: str, molecule_id: str, top_k: int = 10, smiles: str = ""):
     """
-    Return top-K nearest molecules by vector similarity across all jobs.
-    Falls back to empty list when Snowflake is not configured.
+    Return top-K nearest molecules by L2 distance across all jobs.
+    molecule_id or smiles can be used to identify the query molecule.
     """
-    results = snowflake_analytics.similar_molecules(job_id, molecule_id, top_k=min(top_k, 50))
+    results = snowflake_analytics.similar_molecules(job_id, molecule_id, top_k=min(top_k, 50), smiles=smiles)
     return results
 
 
@@ -403,10 +559,12 @@ async def similar_molecules(job_id: str, molecule_id: str, top_k: int = 10):
 async def chemical_space(job_id: str):
     """
     PCA(3D) projection of all molecules in a job for the Chemical Space Explorer.
-    Falls back to empty list when Snowflake is not configured.
+    Returns {available, points} so the frontend can distinguish "not configured"
+    from "no data yet for this job".
     """
-    points = snowflake_analytics.chemical_space_pca(job_id)
-    return points
+    available = snowflake_is_available()
+    points = snowflake_analytics.chemical_space_pca(job_id) if available else []
+    return {"available": available, "points": points}
 
 
 @app.get("/api/snowflake/analytics")

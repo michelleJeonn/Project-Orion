@@ -29,24 +29,15 @@ def _safe_float(val, fallback: float = 0.0) -> float:
         return fallback
 
 
-def _vec_literal(values: list[float]) -> str:
-    """Build a Snowflake VECTOR literal: [1.0,2.0,...]::VECTOR(FLOAT,9)"""
-    inner = ",".join(f"{v:.6f}" for v in values)
-    return f"[{inner}]::VECTOR(FLOAT, 9)"
+_FEATURE_COLS = [
+    "qed", "logp", "molecular_weight", "tpsa",
+    "h_donors", "h_acceptors", "rotatable_bonds",
+    "sa_score", "binding_score",
+]
 
 
 def _build_feature_vector(row: dict) -> list[float]:
-    return [
-        _safe_float(row.get("qed")),
-        _safe_float(row.get("logp")),
-        _safe_float(row.get("molecular_weight")),
-        _safe_float(row.get("tpsa")),
-        _safe_float(row.get("h_donors")),
-        _safe_float(row.get("h_acceptors")),
-        _safe_float(row.get("rotatable_bonds")),
-        _safe_float(row.get("sa_score")),
-        _safe_float(row.get("binding_score")),
-    ]
+    return [_safe_float(row.get(c)) for c in _FEATURE_COLS]
 
 
 # ── Main class ────────────────────────────────────────────────────────────────
@@ -71,14 +62,15 @@ class SnowflakeAnalytics:
 
         rows: list[dict] = []
         for target_uid, results in docking_results_per_target.items():
-            for r in results:
+            for idx, r in enumerate(results):
                 mol = r.get("molecule", {})
                 admet = mol.get("admet", {})
+                molecule_id = mol.get("molecule_id") or f"{job_id[:8]}-{target_uid[:8]}-{idx:04d}"
                 row = {
                     "job_id":           job_id,
                     "disease":          disease,
                     "target":           target_uid,
-                    "molecule_id":      mol.get("molecule_id", ""),
+                    "molecule_id":      molecule_id,
                     "smiles":           mol.get("smiles", ""),
                     "qed":              _safe_float(admet.get("qed_score")),
                     "logp":             _safe_float(admet.get("log_p")),
@@ -102,20 +94,18 @@ class SnowflakeAnalytics:
                 cur = conn.cursor()
                 inserted = 0
                 for row in rows:
-                    vec = _build_feature_vector(row)
-                    vec_lit = _vec_literal(vec)
                     cur.execute(
-                        f"""
+                        """
                         INSERT INTO MOLECULE_FEATURES (
                             job_id, disease, target, molecule_id, smiles,
                             qed, logp, tpsa, sa_score, binding_score,
                             molecular_weight, h_donors, h_acceptors,
-                            rotatable_bonds, generation_method, feature_vector
+                            rotatable_bonds, generation_method
                         ) VALUES (
                             %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s,
                             %s, %s, %s,
-                            %s, %s, {vec_lit}
+                            %s, %s
                         )
                         """,
                         (
@@ -196,56 +186,63 @@ class SnowflakeAnalytics:
         job_id: str,
         molecule_id: str,
         top_k: int = 10,
+        smiles: str = "",
     ) -> list[dict]:
         """
-        Return top-K nearest molecules by VECTOR_L2_DISTANCE across all jobs.
-        Falls back to empty list if Snowflake is unavailable.
+        Return top-K nearest molecules by L2 distance computed in Python.
+        Fetches all molecules, builds feature vectors, ranks by distance.
         """
         if not is_available():
             return []
         try:
+            import numpy as np
+
             with get_connection() as conn:
                 cur = conn.cursor()
-
-                # 1. Fetch query vector
-                cur.execute(
-                    "SELECT feature_vector FROM MOLECULE_FEATURES "
-                    "WHERE job_id = %s AND molecule_id = %s LIMIT 1",
-                    (job_id, molecule_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    cur.close()
-                    return []
-
-                # row[0] is the VECTOR value; cast back to list via TO_ARRAY
                 cur.execute(
                     f"""
-                    SELECT
-                        molecule_id, smiles, disease, target,
-                        qed, binding_score, generation_method,
-                        VECTOR_L2_DISTANCE(
-                            feature_vector,
-                            (SELECT feature_vector FROM MOLECULE_FEATURES
-                             WHERE job_id = %s AND molecule_id = %s LIMIT 1)
-                        ) AS l2_dist
+                    SELECT molecule_id, smiles, disease, target,
+                           qed, binding_score, generation_method,
+                           {', '.join(_FEATURE_COLS)}
                     FROM MOLECULE_FEATURES
-                    WHERE molecule_id != %s
-                    ORDER BY l2_dist ASC
-                    LIMIT {int(top_k)}
                     """,
-                    (job_id, molecule_id, molecule_id),
                 )
                 cols = [d[0].lower() for d in cur.description]
-                results = []
-                for r in cur.fetchall():
-                    rec = dict(zip(cols, r))
-                    # Convert distance to a 0-1 similarity score
-                    dist = float(rec.get("l2_dist", 1.0))
-                    rec["similarity_score"] = round(1.0 / (1.0 + dist), 4)
-                    results.append(rec)
+                all_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
                 cur.close()
-                return results
+
+            if not all_rows:
+                return []
+
+            # Look up by molecule_id first, then fall back to SMILES (handles legacy empty-id rows)
+            query_row = next((r for r in all_rows if r["molecule_id"] == molecule_id and molecule_id), None)
+            if not query_row and smiles:
+                query_row = next((r for r in all_rows if r["smiles"] == smiles), None)
+            if not query_row:
+                return []
+
+            query_smiles = query_row["smiles"]
+            query_vec = np.array(_build_feature_vector(query_row), dtype=float)
+            results = []
+            for r in all_rows:
+                # Exclude self by SMILES — reliable even when molecule_id is empty
+                if r["smiles"] == query_smiles:
+                    continue
+                vec = np.array(_build_feature_vector(r), dtype=float)
+                dist = float(np.linalg.norm(query_vec - vec))
+                results.append({
+                    "molecule_id":       r["molecule_id"],
+                    "smiles":            r["smiles"],
+                    "disease":           r["disease"],
+                    "target":            r["target"],
+                    "qed":               _safe_float(r.get("qed")),
+                    "binding_score":     _safe_float(r.get("binding_score")),
+                    "generation_method": r["generation_method"],
+                    "similarity_score":  round(1.0 / (1.0 + dist), 4),
+                })
+
+            results.sort(key=lambda x: x["similarity_score"], reverse=True)
+            return results[:top_k]
         except Exception as exc:
             logger.warning(f"Snowflake similarity search failed: {exc}")
             return []

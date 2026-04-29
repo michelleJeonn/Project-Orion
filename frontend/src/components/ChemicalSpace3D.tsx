@@ -1,6 +1,6 @@
-import { useState, useEffect, Suspense, useRef } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { useState, useEffect, Suspense } from 'react'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
@@ -65,58 +65,67 @@ function MoleculePoint({
   selected: boolean
 }) {
   const [hovered, setHovered] = useState(false)
-  const size = 0.05 + point.qed * 0.13
+  const size = 0.07 + point.qed * 0.05  // tighter range: 0.07 – 0.12
   const color = bindingColorThree(point.binding_score)
+  const scale = hovered ? 1.4 : 1
 
   return (
-    <mesh
+    <group
       position={[point.x, point.y, point.z]}
+      scale={scale}
       onClick={(e) => { e.stopPropagation(); onClick(point) }}
       onPointerEnter={(e) => { e.stopPropagation(); setHovered(true); onHover(point) }}
       onPointerLeave={() => { setHovered(false); onHover(null) }}
     >
-      <sphereGeometry args={[hovered || selected ? size * 1.5 : size, 8, 8]} />
-      <meshStandardMaterial
-        color={color}
-        emissive={color}
-        emissiveIntensity={hovered || selected ? 0.7 : 0.18}
-        roughness={0.3}
-        metalness={0.15}
-      />
-    </mesh>
+      <mesh>
+        <sphereGeometry args={[size, 16, 16]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={hovered ? 0.45 : 0.1}
+          roughness={0.55}
+          metalness={0}
+          transparent
+          opacity={0.92}
+        />
+      </mesh>
+      {selected && (
+        <mesh>
+          <torusGeometry args={[size * 2, 0.013, 8, 40]} />
+          <meshBasicMaterial color={color} transparent opacity={0.65} />
+        </mesh>
+      )}
+    </group>
   )
 }
+
+const AXES = [
+  { pts: [-5, 0, 0, 5, 0, 0] as number[], color: '#c97eb5', label: 'PC1', tip: [5.4, 0, 0] as [number, number, number] },
+  { pts: [0, -5, 0, 0, 5, 0] as number[], color: '#7a4adb', label: 'PC2', tip: [0, 5.4, 0] as [number, number, number] },
+  { pts: [0, 0, -5, 0, 0, 5] as number[], color: '#4a8fd4', label: 'PC3', tip: [0, 0, 5.4] as [number, number, number] },
+]
 
 function SceneAxes() {
   return (
     <>
-      <line>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            args={[new Float32Array([-4, 0, 0, 4, 0, 0]), 3]}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color="#1a1a2e" />
-      </line>
-      <line>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            args={[new Float32Array([0, -4, 0, 0, 4, 0]), 3]}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color="#1a1a2e" />
-      </line>
-      <line>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            args={[new Float32Array([0, 0, -4, 0, 0, 4]), 3]}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color="#1a1a2e" />
-      </line>
+      {AXES.map(({ pts, color, label, tip }) => (
+        <group key={label}>
+          <line>
+            <bufferGeometry>
+              <bufferAttribute attach="attributes-position" args={[new Float32Array(pts), 3]} />
+            </bufferGeometry>
+            <lineBasicMaterial color={color} transparent opacity={0.35} />
+          </line>
+          <Html position={tip} center style={{ pointerEvents: 'none' }}>
+            <span style={{
+              fontFamily: 'monospace', fontSize: 10, fontWeight: 600,
+              color, opacity: 0.75, letterSpacing: '0.08em', userSelect: 'none',
+            }}>
+              {label}
+            </span>
+          </Html>
+        </group>
+      ))}
     </>
   )
 }
@@ -167,8 +176,13 @@ export function ChemicalSpace3D({ jobId }: { jobId: string }) {
     fetch(`${API_BASE}/api/snowflake/chemical_space/${jobId}`)
       .then((r) => r.json())
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) setPoints(data)
-        else setError('no_data')
+        if (!data.available) {
+          setError('not_configured')
+        } else if (Array.isArray(data.points) && data.points.length > 0) {
+          setPoints(data.points)
+        } else {
+          setError('no_data')
+        }
       })
       .catch(() => setError('fetch_failed'))
       .finally(() => setLoading(false))
@@ -178,7 +192,7 @@ export function ChemicalSpace3D({ jobId }: { jobId: string }) {
     setSelected(p)
     setSimilar([])
     setLoadingSimilar(true)
-    fetch(`${API_BASE}/api/snowflake/similar_molecules/${jobId}/${encodeURIComponent(p.molecule_id)}`)
+    fetch(`${API_BASE}/api/snowflake/similar_molecules/${jobId}/${encodeURIComponent(p.molecule_id || '_')}?smiles=${encodeURIComponent(p.smiles)}`)
       .then((r) => r.json())
       .then((data) => setSimilar(Array.isArray(data) ? data : []))
       .catch(() => setSimilar([]))
@@ -194,18 +208,21 @@ export function ChemicalSpace3D({ jobId }: { jobId: string }) {
   }
 
   if (error || points.length === 0) {
+    const subtitle = error === 'not_configured'
+      ? 'Configure Snowflake env vars to enable chemical intelligence'
+      : 'Run a pipeline job to populate the chemical space'
     return (
       <div style={{ color: D.text3, fontFamily: 'var(--mono)', fontSize: 10, padding: '3rem', textAlign: 'center', letterSpacing: '0.10em', lineHeight: 1.8 }}>
         CHEMICAL SPACE UNAVAILABLE<br />
         <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.18)' }}>
-          Configure Snowflake env vars and run a pipeline to populate data
+          {subtitle}
         </span>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', gap: '1rem', height: 440 }}>
+    <div style={{ display: 'flex', gap: '1rem', height: '100%', minHeight: 0 }}>
       {/* 3D canvas */}
       <div style={{
         flex: 1, position: 'relative',
@@ -261,11 +278,17 @@ export function ChemicalSpace3D({ jobId }: { jobId: string }) {
             COLOR = ΔG
             <span style={{
               display: 'inline-block', width: 44, height: 5, borderRadius: 3,
-              background: 'linear-gradient(to right, #8C50FF, #E493CE)',
+              background: 'linear-gradient(to right, #7a4adb, #c97eb5)',
             }} />
-            low → high
+            strong → weak
           </span>
-          <span>CLICK = find similar</span>
+          <span style={{ display: 'flex', gap: 6 }}>
+            {AXES.map(a => (
+              <span key={a.label} style={{ color: a.color, opacity: 0.75 }}>{a.label}</span>
+            ))}
+            = PCA axes
+          </span>
+          <span>CLICK = select · DRAG = rotate</span>
         </div>
 
         <div style={{
@@ -273,7 +296,7 @@ export function ChemicalSpace3D({ jobId }: { jobId: string }) {
           fontFamily: 'var(--mono)', fontSize: 8,
           color: 'rgba(255,255,255,0.20)',
         }}>
-          {points.length} MOLECULES · DRAG TO ROTATE
+          {points.length} MOLECULES
         </div>
       </div>
 

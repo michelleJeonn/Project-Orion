@@ -8,7 +8,7 @@ Tables:
 import os
 import logging
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Any
 
 from backend.config import settings
 
@@ -58,6 +58,42 @@ def is_available() -> bool:
     return _SF_AVAILABLE and _cfg() is not None
 
 
+def status() -> dict[str, Any]:
+    """
+    Return Snowflake readiness diagnostics without exposing secrets.
+    Includes connector/config state and a lightweight connectivity check.
+    """
+    required = [
+        "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ACCOUNT",
+        "SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA",
+    ]
+    cfg = _cfg()
+    missing = [k for k in required if not (os.environ.get(k) or getattr(settings, k.lower(), ""))]
+    out: dict[str, Any] = {
+        "connector_installed": _SF_AVAILABLE,
+        "configured": cfg is not None,
+        "available": is_available(),
+        "missing_keys": missing,
+        "connection_ok": False,
+        "error": None,
+    }
+    if not out["available"]:
+        return out
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT CURRENT_ACCOUNT(), CURRENT_REGION(), CURRENT_WAREHOUSE()")
+            row = cur.fetchone()
+            cur.close()
+        out["connection_ok"] = True
+        out["account"] = row[0] if row else None
+        out["region"] = row[1] if row else None
+        out["warehouse"] = row[2] if row else None
+    except Exception as exc:
+        out["error"] = str(exc)
+    return out
+
+
 @contextmanager
 def get_connection():
     """Yield an open Snowflake connection; close it on exit."""
@@ -97,10 +133,18 @@ CREATE TABLE IF NOT EXISTS MOLECULE_FEATURES (
     h_acceptors         FLOAT,
     rotatable_bonds     FLOAT,
     generation_method   STRING,
-    feature_vector      VECTOR(FLOAT, 9),
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 """
+
+# Columns added after initial schema — safe to run repeatedly
+_DDL_MOLECULE_FEATURES_MIGRATIONS = [
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS molecular_weight FLOAT",
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS h_donors FLOAT",
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS h_acceptors FLOAT",
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS rotatable_bonds FLOAT",
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS generation_method STRING",
+]
 
 _DDL_GENESIS_REPORTS = """
 CREATE TABLE IF NOT EXISTS GENESIS_REPORTS (
@@ -125,6 +169,11 @@ def init_snowflake_tables() -> None:
             cur = conn.cursor()
             cur.execute(_DDL_MOLECULE_FEATURES)
             cur.execute(_DDL_GENESIS_REPORTS)
+            for migration in _DDL_MOLECULE_FEATURES_MIGRATIONS:
+                try:
+                    cur.execute(migration)
+                except Exception:
+                    pass  # column already exists or not supported — safe to ignore
             cur.close()
         logger.info("Snowflake tables ready (MOLECULE_FEATURES, GENESIS_REPORTS)")
     except Exception as exc:
