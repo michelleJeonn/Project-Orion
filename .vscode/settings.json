@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "/Users/michellejeon/Desktop/Project-Orion/venv/bin/python",
+  "python.analysis.extraPaths": [
+    "/Users/michellejeon/Desktop/Project-Orion"
+  ],
+  "python.analysis.pythonPath": "/Users/michellejeon/Desktop/Project-Orion/venv/bin/python"
+}
