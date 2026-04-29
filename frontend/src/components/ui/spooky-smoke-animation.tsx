@@ -16,36 +16,23 @@ float noise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);return mix(mix(rn
 float fbm(vec2 p){float t=.0,a=1.;for(int i=0;i<5;i++){t+=a*noise(p);p*=mat2(1,-1.2,.2,1.2)*2.;a*=.5;}return t;}
 
 void main(){
-  vec2 uv = (FC - 0.5 * R) / R.y;
+  vec2 uv=(FC-.5*R)/R.y;
+  vec3 col=vec3(1);
+  uv.x+=.25;
+  uv*=vec2(2,1);
 
-  // Slight left offset so smoke is densest near canvas left edge (the seam)
-  uv.x += 0.05;
-  uv *= vec2(0.9, 1.2);
+  float n=fbm(uv*.28-vec2(T*.01,0));
+  n=noise(uv*3.+n*2.);
 
-  // Two-pass domain warp — large scale for organic billowing
-  vec2 q = vec2(
-    fbm(uv * 0.28 + vec2(0.0, T * 0.003)),
-    fbm(uv * 0.28 + vec2(3.4, T * 0.003))
-  );
-  vec2 warpedUv = uv + q * 0.9;
+  col.r-=fbm(uv+vec2(0,T*.015)+n);
+  col.g-=fbm(uv*1.003+vec2(0,T*.015)+n+.003);
+  col.b-=fbm(uv*1.006+vec2(0,T*.015)+n+.006);
 
-  // Main smoke density on warped coords
-  float density = fbm(warpedUv * 0.32 + vec2(T * 0.005, 0.0));
-  density = density * 0.5 + 0.5; // remap to [0,1]
-  density = pow(density, 1.4);   // nonlinear shaping for distinct puffs
+  col=mix(col,u_color,dot(col,vec3(.21,.71,.07)));
 
-  // Hard fade rightward — smoke dissolves as it enters the dark panel
-  float xFade = 1.0 - smoothstep(0.05, 0.88, FC.x / R.x);
-  density *= xFade;
-
-  // Alpha: only bright regions are visible smoke
-  float alpha = smoothstep(0.08, 0.62, density);
-
-  // Fade-in on load
-  alpha *= min(time * 0.12, 1.0);
-
-  // Output smoke color with alpha — canvas background is transparent
-  O = vec4(u_color, alpha);
+  col=mix(vec3(.08),col,min(time*.1,1.));
+  col=clamp(col,.08,1.);
+  O=vec4(col,1);
 }`;
 
 class Renderer {
@@ -65,7 +52,7 @@ void main(){gl_Position=position;}`;
 
   constructor(canvas: HTMLCanvasElement, fragmentSource: string) {
     this.canvas = canvas;
-    this.gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false }) as WebGL2RenderingContext;
+    this.gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
     this.setup(fragmentSource);
     this.init();
   }
@@ -76,8 +63,7 @@ void main(){gl_Position=position;}`;
 
   updateScale() {
     const dpr = Math.max(1, window.devicePixelRatio);
-    const width = this.canvas.clientWidth;
-    const height = this.canvas.clientHeight;
+    const { innerWidth: width, innerHeight: height } = window;
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -137,10 +123,8 @@ void main(){gl_Position=position;}`;
   render(now = 0) {
     const { gl, program, buffer, canvas } = this;
     if (!program || !gl.isProgram(program)) return;
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.uniform2f((program as any).resolution, canvas.width, canvas.height);
@@ -178,9 +162,8 @@ export const SmokeBackground: React.FC<SmokeBackgroundProps> = ({
     rendererRef.current = renderer;
 
     const handleResize = () => renderer.updateScale();
-    const ro = new ResizeObserver(handleResize);
-    ro.observe(canvas);
     handleResize();
+    window.addEventListener('resize', handleResize);
 
     let animationFrameId: number;
     const loop = (now: number) => {
@@ -190,7 +173,7 @@ export const SmokeBackground: React.FC<SmokeBackgroundProps> = ({
     loop(0);
 
     return () => {
-      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
       renderer.reset();
     };

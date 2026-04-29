@@ -4,6 +4,9 @@ import { MoleculeCard } from './MoleculeCard'
 import { ProteinViewer3D } from './ProteinViewer3D'
 import { MoleculeViewer3D } from './MoleculeViewer3D'
 import { DynamicPathwayGraph } from './DynamicPathwayGraph'
+import { ChemicalSpace3D } from './ChemicalSpace3D'
+import { SnowflakeAnalyticsPanel } from './SnowflakeAnalyticsPanel'
+import { ReportSearchPanel } from './ReportSearchPanel'
 
 // ── Dark theme tokens ───────────────────────────────────────────
 const D = {
@@ -32,13 +35,14 @@ const D = {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
-type ReportAgent = 'disease' | 'targets' | 'molecules' | 'docking' | 'insight'
+type ReportAgent = 'disease' | 'targets' | 'molecules' | 'docking' | 'insight' | 'chemical_intelligence'
 const AGENTS = [
   { id: 'disease' as ReportAgent, n: '01', label: 'Disease Intelligence', src: 'CLAUDE · PUBMED · OMIM' },
   { id: 'targets' as ReportAgent, n: '02', label: 'Target Discovery', src: 'DISGENET · UNIPROT · PDB' },
   { id: 'molecules' as ReportAgent, n: '03', label: 'Molecule Generation', src: 'RDKIT · CHEMBL' },
   { id: 'docking' as ReportAgent, n: '04', label: 'Docking · Analysis', src: 'AUTODOCK VINA' },
   { id: 'insight' as ReportAgent, n: '05', label: 'Insight Synthesis', src: 'CLAUDE' },
+  { id: 'chemical_intelligence' as ReportAgent, n: '06', label: 'Chemical Intelligence', src: 'SNOWFLAKE · PCA' },
 ]
 
 function mulberry32(seed: number) {
@@ -100,7 +104,7 @@ interface ReportViewProps {
   jobId?: string
 }
 
-export function ReportView({ report, onBack, onDownload }: ReportViewProps) {
+export function ReportView({ report, onBack, onDownload, jobId }: ReportViewProps) {
   const [agent, setAgent] = useState<ReportAgent>('disease')
   const plate = useMemo(() => String(100 + Math.floor(Math.random() * 900)), [])
   const idx = AGENTS.findIndex(a => a.id === agent)
@@ -185,7 +189,7 @@ export function ReportView({ report, onBack, onDownload }: ReportViewProps) {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '.55rem', borderBottom: '1px solid rgba(228,147,206,0.10)', marginBottom: '.4rem' }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(228,147,206,0.45)' }}>Apparatus</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'rgba(228,147,206,0.35)' }}>05</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'rgba(228,147,206,0.35)' }}>06</span>
           </div>
           <ul style={{ margin: '.25rem 0 0', padding: 0, listStyle: 'none', flex: 1, minHeight: 0 }}>
             {AGENTS.map((a) => {
@@ -241,6 +245,7 @@ export function ReportView({ report, onBack, onDownload }: ReportViewProps) {
           {agent === 'molecules' && <MoleculesPane r={report} plate={plate} />}
           {agent === 'docking' && <DockingPane r={report} plate={plate} />}
           {agent === 'insight' && <InsightPane r={report} />}
+          {agent === 'chemical_intelligence' && <ChemicalIntelligencePane jobId={jobId} />}
         </main>
       </div>
 
@@ -1941,5 +1946,57 @@ function SubPanel({ title, index, children, grow }: {
       </div>
       <div style={{ paddingTop: '.4rem', flex: 1, minHeight: 0, overflowY: 'auto' }}>{children}</div>
     </div>
+  )
+}
+
+// ── Chemical Intelligence pane ───────────────────────────────────
+function ChemicalIntelligencePane({ jobId }: { jobId?: string }) {
+  const [ciTab, setCiTab] = useState<'space' | 'analytics' | 'search'>('space')
+
+  const tabs: { id: typeof ciTab; label: string }[] = [
+    { id: 'space', label: 'Chemical Space' },
+    { id: 'analytics', label: 'Cross-Run Analytics' },
+    { id: 'search', label: 'Report Search' },
+  ]
+
+  return (
+    <PaneShell index={6} title="Chemical Intelligence" src="SNOWFLAKE · PCA · RAG">
+      {/* Tab bar */}
+      <div style={{
+        display: 'flex', gap: '.4rem', marginBottom: '1rem', flexShrink: 0,
+      }}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setCiTab(t.id)}
+            style={{
+              background: ciTab === t.id ? D.purplePanel : 'transparent',
+              border: `1px solid ${ciTab === t.id ? D.purpleBorder : D.border}`,
+              borderRadius: 3, cursor: 'pointer',
+              color: ciTab === t.id ? D.purple : D.text3,
+              fontFamily: 'var(--mono)', fontSize: 9,
+              letterSpacing: '0.10em', padding: '.35rem .75rem',
+              transition: 'background .12s, border-color .12s, color .12s',
+            }}
+          >
+            {t.label.toUpperCase()}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 8, color: D.text3, alignSelf: 'center', letterSpacing: '0.10em' }}>
+          SNOWFLAKE CHEMICAL INTELLIGENCE LAYER
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {ciTab === 'space' && (
+          jobId
+            ? <ChemicalSpace3D jobId={jobId} />
+            : <div style={{ color: D.text3, fontFamily: 'var(--mono)', fontSize: 9, padding: '2rem', textAlign: 'center' }}>Job ID unavailable</div>
+        )}
+        {ciTab === 'analytics' && <SnowflakeAnalyticsPanel />}
+        {ciTab === 'search' && <ReportSearchPanel />}
+      </div>
+    </PaneShell>
   )
 }

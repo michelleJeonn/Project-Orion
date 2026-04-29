@@ -27,6 +27,8 @@ from backend.config import settings
 from backend.utils.logger import get_logger
 from backend.services.arxiv import arxiv_client
 from backend.services.alphafold import alphafold_client
+from backend.services.snowflake_client import init_snowflake_tables
+from backend.analytics.snowflake_analytics import snowflake_analytics
 from backend.db.session import get_db, init_db, engine
 from backend.db import crud
 
@@ -35,10 +37,21 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    try:
+        await init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database initialization failed: {e}. Running in offline mode.")
+    try:
+        init_snowflake_tables()
+    except Exception as e:
+        logger.warning(f"Snowflake init skipped: {e}")
     logger.info("Cryosis API starting up")
     yield
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except Exception as e:
+        logger.warning(f"Database disposal failed: {e}")
     logger.info("Cryosis API shutting down")
 
 
@@ -372,6 +385,49 @@ async def get_alphafold_structure(uniprot_id: str):
         raise HTTPException(status_code=404, detail=f"No AlphaFold structure for {uniprot_id}")
     filename = f"AF-{uniprot_id}.pdb"
     return JSONResponse({"filename": filename, "uniprot_id": uniprot_id})
+
+
+# ── Snowflake Chemical Intelligence Routes ────────────────────────────────── #
+
+@app.get("/api/snowflake/similar_molecules/{job_id}/{molecule_id}")
+async def similar_molecules(job_id: str, molecule_id: str, top_k: int = 10):
+    """
+    Return top-K nearest molecules by vector similarity across all jobs.
+    Falls back to empty list when Snowflake is not configured.
+    """
+    results = snowflake_analytics.similar_molecules(job_id, molecule_id, top_k=min(top_k, 50))
+    return results
+
+
+@app.get("/api/snowflake/chemical_space/{job_id}")
+async def chemical_space(job_id: str):
+    """
+    PCA(3D) projection of all molecules in a job for the Chemical Space Explorer.
+    Falls back to empty list when Snowflake is not configured.
+    """
+    points = snowflake_analytics.chemical_space_pca(job_id)
+    return points
+
+
+@app.get("/api/snowflake/analytics")
+async def snowflake_cross_run_analytics():
+    """
+    Cross-run analytics: generation method leaderboard, top targets, disease rankings.
+    Falls back to empty data when Snowflake is not configured.
+    """
+    return snowflake_analytics.cross_run_analytics()
+
+
+@app.get("/api/snowflake/search_reports")
+async def search_reports(query: str = "", limit: int = 10):
+    """
+    Keyword search over stored GenesisReports using ILIKE.
+    Returns matching report excerpts with matched section and snippet.
+    """
+    if not query or len(query.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Query too short (min 2 chars)")
+    results = snowflake_analytics.search_reports(query.strip(), limit=min(limit, 50))
+    return results
 
 
 if __name__ == "__main__":
