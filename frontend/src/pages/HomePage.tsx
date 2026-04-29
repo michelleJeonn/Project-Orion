@@ -110,8 +110,14 @@ export function HomePage() {
     if (!isComplete || !jobId) return
     if (isDemoMode()) { setReport(mockGenesisReport); return }
     fetch(`/api/results/${jobId}`)
-      .then(r => r.json())
-      .then(data => { if (data.job_id) setReport(data as GenesisReport) })
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) {
+          throw new Error(data?.detail || `Failed to fetch results (${r.status})`)
+        }
+        return data
+      })
+      .then(data => setReport(data as GenesisReport))
       .catch(e => console.error('Failed to fetch results:', e))
   }, [isComplete, jobId])
 

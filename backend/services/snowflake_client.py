@@ -10,6 +10,8 @@ import logging
 from contextlib import contextmanager
 from typing import Optional
 
+from backend.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ── Optional import ────────────────────────────────────────────────────────── #
@@ -27,12 +29,18 @@ except ImportError:
 # ── Config ─────────────────────────────────────────────────────────────────── #
 
 def _cfg() -> Optional[dict]:
-    """Return connector kwargs from env vars, or None if any key is missing."""
-    keys = [
-        "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ACCOUNT",
-        "SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA",
-    ]
-    vals = {k: os.environ.get(k, "") for k in keys}
+    """Return connector kwargs from env vars/settings, or None if any key is missing."""
+    env_to_settings = {
+        "SNOWFLAKE_USER": "snowflake_user",
+        "SNOWFLAKE_PASSWORD": "snowflake_password",
+        "SNOWFLAKE_ACCOUNT": "snowflake_account",
+        "SNOWFLAKE_WAREHOUSE": "snowflake_warehouse",
+        "SNOWFLAKE_DATABASE": "snowflake_database",
+        "SNOWFLAKE_SCHEMA": "snowflake_schema",
+    }
+    vals = {}
+    for env_key, settings_key in env_to_settings.items():
+        vals[env_key] = os.environ.get(env_key) or getattr(settings, settings_key, "")
     if not all(vals.values()):
         return None
     return {

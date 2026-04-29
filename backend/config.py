@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # MCP — optional tool interface layer (does not affect FastAPI)
     enable_mcp: bool = False
 
+    # Snowflake (optional)
+    snowflake_account: str = ""
+    snowflake_user: str = ""
+    snowflake_password: str = ""
+    snowflake_warehouse: str = ""
+    snowflake_database: str = ""
+    snowflake_schema: str = ""
+
     # Demo mode — skips slow external API calls and real docking for fast demos
     demo_mode: bool = False
     demo_max_targets: int = 2

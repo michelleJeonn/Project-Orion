@@ -9,6 +9,9 @@ class DockingComponent(Component):
         "for each molecule against a protein structure. Returns ranked poses."
     )
     icon = "atom"
+    # Langflow compat stubs do not hydrate input defaults onto instance attrs.
+    # Keep an explicit class default so orchestration can run without Langflow.
+    top_n = 20
 
     inputs = [
         DataInput(
@@ -41,10 +44,11 @@ class DockingComponent(Component):
         agent = DockingAgent()
         target = Target.model_validate(self.target_data.data)
         library = MoleculeLibrary.model_validate(self.molecule_library.data)
+        top_n = max(1, int(getattr(self, "top_n", 20) or 20))
         results = await agent.run_docking(
             target=target,
             library=library,
-            top_n=self.top_n,
+            top_n=top_n,
         )
         return Data(data={
             "target_uniprot_id": target.uniprot_id,

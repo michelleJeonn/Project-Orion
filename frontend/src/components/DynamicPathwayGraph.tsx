@@ -26,7 +26,7 @@ const MIN_Y_GAP = 44
 
 interface Pos { x: number; y: number }
 
-function computeLayout(nodes: PathwayNode[], edges: PathwayEdge[]): Map<string, Pos> {
+function computeLayout(nodes: PathwayNode[], edges: PathwayEdge[], svgW: number, svgH: number): Map<string, Pos> {
   if (nodes.length === 0) return new Map()
 
   // Build adjacency + in-degree
@@ -76,14 +76,14 @@ function computeLayout(nodes: PathwayNode[], edges: PathwayEdge[]): Map<string, 
 
   // x positions: spread levels evenly across SVG_W with padding
   const padX = 44
-  const xStep = numLevels > 1 ? (SVG_W - 2 * padX) / (numLevels - 1) : 0
+  const xStep = numLevels > 1 ? (svgW - 2 * padX) / (numLevels - 1) : 0
 
   const positions = new Map<string, Pos>()
   for (const [lvl, ids] of byLevel) {
     const x = padX + lvl * xStep
     const count = ids.length
     const totalH = (count - 1) * MIN_Y_GAP
-    const startY = SVG_H / 2 - totalH / 2
+    const startY = svgH / 2 - totalH / 2
     ids.forEach((id, i) => {
       positions.set(id, { x, y: startY + i * MIN_Y_GAP })
     })
@@ -113,7 +113,47 @@ interface Props {
 export function DynamicPathwayGraph({ graph, focalGene }: Props) {
   const { nodes, edges } = graph
 
-  const positions = useMemo(() => computeLayout(nodes, edges), [nodes, edges])
+  const maxNodesInColumn = useMemo(() => {
+    if (nodes.length === 0) return 0
+    const inDegree = new Map<string, number>(nodes.map(n => [n.id, 0]))
+    const outAdj = new Map<string, string[]>(nodes.map(n => [n.id, []]))
+    for (const e of edges) {
+      if (inDegree.has(e.source) && inDegree.has(e.target)) {
+        outAdj.get(e.source)!.push(e.target)
+        inDegree.set(e.target, (inDegree.get(e.target) ?? 0) + 1)
+      }
+    }
+    const level = new Map<string, number>()
+    const roots = nodes.filter(n => inDegree.get(n.id) === 0)
+    const starts = roots.length > 0 ? roots : [nodes[0]]
+    const queue: string[] = starts.map(n => n.id)
+    for (const id of queue) level.set(id, 0)
+    let qi = 0
+    while (qi < queue.length) {
+      const curr = queue[qi++]
+      const currLvl = level.get(curr) ?? 0
+      for (const nb of outAdj.get(curr) ?? []) {
+        if (!level.has(nb)) {
+          level.set(nb, currLvl + 1)
+          queue.push(nb)
+        }
+      }
+    }
+    for (const n of nodes) if (!level.has(n.id)) level.set(n.id, 0)
+    const counts = new Map<number, number>()
+    for (const [, lvl] of level) counts.set(lvl, (counts.get(lvl) ?? 0) + 1)
+    return Math.max(...counts.values())
+  }, [nodes, edges])
+
+  const svgHeight = useMemo(() => {
+    const verticalPadding = 56
+    const required = maxNodesInColumn > 0
+      ? verticalPadding + (maxNodesInColumn - 1) * MIN_Y_GAP + (DRIVER_R + 20)
+      : SVG_H
+    return Math.max(SVG_H, required)
+  }, [maxNodesInColumn])
+
+  const positions = useMemo(() => computeLayout(nodes, edges, SVG_W, svgHeight), [nodes, edges, svgHeight])
 
   // Deduplicate rendered nodes (KGML can have label collisions)
   const renderedNodes = useMemo(() => {
@@ -145,8 +185,12 @@ export function DynamicPathwayGraph({ graph, focalGene }: Props) {
       </div>
 
       {/* SVG graph */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ width: '100%', height: '100%' }} preserveAspectRatio="xMidYMid meet">
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        <svg
+          viewBox={`0 0 ${SVG_W} ${svgHeight}`}
+          style={{ width: '100%', height: `${svgHeight}px`, display: 'block' }}
+          preserveAspectRatio="xMidYMin meet"
+        >
           <defs>
             <marker id="dpg-arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
               <path d="M0,0.5 L0,5.5 L5.5,3 z" fill="rgba(255,255,255,0.30)" />
