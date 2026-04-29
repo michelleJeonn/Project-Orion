@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import AsyncIterator
 
-from langflow.schema import Data
+from backend.langflow_compat import Data
 
 from backend.langflow_components import (
     DiseaseIntelligenceComponent,

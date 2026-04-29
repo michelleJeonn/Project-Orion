@@ -1,7 +1,5 @@
 """Langflow component: Disease Intelligence Agent."""
-from langflow.custom import Component
-from langflow.io import IntInput, MessageTextInput, Output
-from langflow.schema import Data
+from backend.langflow_compat import Component, IntInput, MessageTextInput, Output, Data
 
 
 class DiseaseIntelligenceComponent(Component):

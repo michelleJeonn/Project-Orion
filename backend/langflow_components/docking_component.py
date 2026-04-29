@@ -1,7 +1,5 @@
 """Langflow component: Molecular Docking Agent."""
-from langflow.custom import Component
-from langflow.io import DataInput, IntInput, Output
-from langflow.schema import Data
+from backend.langflow_compat import Component, DataInput, IntInput, Output, Data
 
 
 class DockingComponent(Component):

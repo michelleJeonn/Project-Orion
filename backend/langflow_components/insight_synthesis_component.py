@@ -1,9 +1,7 @@
 """Langflow component: Insight Synthesis Agent."""
 from datetime import datetime
 
-from langflow.custom import Component
-from langflow.io import DataInput, MessageTextInput, Output
-from langflow.schema import Data
+from backend.langflow_compat import Component, DataInput, MessageTextInput, Output, Data
 
 
 class InsightSynthesisComponent(Component):

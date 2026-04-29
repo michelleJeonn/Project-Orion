@@ -60,6 +60,17 @@ export function LandingPage() {
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <div style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 'clamp(0.65rem, 1.1vw, 0.9rem)',
+            letterSpacing: '0.35em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.45)',
+            marginBottom: '0.4rem',
+            marginLeft: '0.2rem',
+          }}>
+            Project
+          </div>
+          <div style={{
             fontFamily: "'Cinzel', serif",
             fontSize: 'clamp(4.5rem, 9vw, 9rem)',
             fontWeight: 400,
@@ -67,7 +78,7 @@ export function LandingPage() {
             color: 'rgba(255,255,255,0.95)',
             lineHeight: 1,
           }}>
-            Cryosis
+            ORION
           </div>
           <div style={{
             fontFamily: 'var(--mono)',
