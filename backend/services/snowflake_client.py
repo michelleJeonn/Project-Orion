@@ -1,0 +1,123 @@
+"""
+Snowflake Chemical Intelligence Layer — connection management and DDL.
+
+Tables:
+  MOLECULE_FEATURES  — per-molecule property warehouse with VECTOR(FLOAT,9)
+  GENESIS_REPORTS    — flattened report text for keyword / Cortex search
+"""
+import os
+import logging
+from contextlib import contextmanager
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# ── Optional import ────────────────────────────────────────────────────────── #
+_SF_AVAILABLE = False
+try:
+    import snowflake.connector  # noqa: F401
+    _SF_AVAILABLE = True
+except ImportError:
+    logger.warning(
+        "snowflake-connector-python not installed; "
+        "Snowflake Chemical Intelligence Layer disabled."
+    )
+
+
+# ── Config ─────────────────────────────────────────────────────────────────── #
+
+def _cfg() -> Optional[dict]:
+    """Return connector kwargs from env vars, or None if any key is missing."""
+    keys = [
+        "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ACCOUNT",
+        "SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA",
+    ]
+    vals = {k: os.environ.get(k, "") for k in keys}
+    if not all(vals.values()):
+        return None
+    return {
+        "user":      vals["SNOWFLAKE_USER"],
+        "password":  vals["SNOWFLAKE_PASSWORD"],
+        "account":   vals["SNOWFLAKE_ACCOUNT"],
+        "warehouse": vals["SNOWFLAKE_WAREHOUSE"],
+        "database":  vals["SNOWFLAKE_DATABASE"],
+        "schema":    vals["SNOWFLAKE_SCHEMA"],
+    }
+
+
+def is_available() -> bool:
+    """True when the connector is installed and all env vars are present."""
+    return _SF_AVAILABLE and _cfg() is not None
+
+
+@contextmanager
+def get_connection():
+    """Yield an open Snowflake connection; close it on exit."""
+    if not _SF_AVAILABLE:
+        raise RuntimeError("snowflake-connector-python not installed")
+    cfg = _cfg()
+    if not cfg:
+        raise RuntimeError(
+            "Snowflake env vars incomplete. "
+            "Set SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, SNOWFLAKE_ACCOUNT, "
+            "SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE, SNOWFLAKE_SCHEMA."
+        )
+    import snowflake.connector
+    conn = snowflake.connector.connect(**cfg)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+# ── DDL ────────────────────────────────────────────────────────────────────── #
+
+_DDL_MOLECULE_FEATURES = """
+CREATE TABLE IF NOT EXISTS MOLECULE_FEATURES (
+    job_id              STRING,
+    disease             STRING,
+    target              STRING,
+    molecule_id         STRING,
+    smiles              STRING,
+    qed                 FLOAT,
+    logp                FLOAT,
+    tpsa                FLOAT,
+    sa_score            FLOAT,
+    binding_score       FLOAT,
+    molecular_weight    FLOAT,
+    h_donors            FLOAT,
+    h_acceptors         FLOAT,
+    rotatable_bonds     FLOAT,
+    generation_method   STRING,
+    feature_vector      VECTOR(FLOAT, 9),
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
+"""
+
+_DDL_GENESIS_REPORTS = """
+CREATE TABLE IF NOT EXISTS GENESIS_REPORTS (
+    job_id              STRING,
+    disease             STRING,
+    report_json         VARIANT,
+    report_text         STRING,
+    pathway_summary     STRING,
+    molecule_rationale  STRING,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
+"""
+
+
+def init_snowflake_tables() -> None:
+    """Create warehouse tables when the app starts up. No-op if unavailable."""
+    if not is_available():
+        logger.info("Snowflake not configured — skipping table initialisation")
+        return
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(_DDL_MOLECULE_FEATURES)
+            cur.execute(_DDL_GENESIS_REPORTS)
+            cur.close()
+        logger.info("Snowflake tables ready (MOLECULE_FEATURES, GENESIS_REPORTS)")
+    except Exception as exc:
+        logger.warning(f"Snowflake table init failed: {exc}")
