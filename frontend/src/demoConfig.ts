@@ -2,7 +2,7 @@ export const DEMO_STORAGE_KEY = 'GENESIS_DEMO_MODE';
 
 export function isDemoMode() {
   const stored = localStorage.getItem(DEMO_STORAGE_KEY);
-  // default ON — falls back to mock data when no backend is present
+  // default ON — uses mock data; toggle off via the button once backend is running
   return stored === null ? true : stored === 'true';
 }
 

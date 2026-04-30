@@ -115,9 +115,10 @@ export function JobPage() {
             position: 'fixed', bottom: 28, right: 28, zIndex: 40,
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '.65rem 1.4rem',
-            background: 'rgba(8,8,10,0.85)', backdropFilter: 'blur(12px)',
-            border: '1px solid var(--hair)',
-            color: 'var(--ink-2)', cursor: 'pointer',
+            background: 'rgba(8,8,10,0.92)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,91,42,0.5)',
+            boxShadow: '0 0 16px rgba(255,91,42,0.18)',
+            color: 'var(--ink-1)', cursor: 'pointer',
             fontFamily: 'var(--mono)', fontSize: '0.56rem', letterSpacing: '0.22em',
             textTransform: 'uppercase',
             transition: 'opacity .3s',
@@ -125,7 +126,7 @@ export function JobPage() {
             pointerEvents: chatOpen ? 'none' : 'auto',
           }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'block' }}/>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'block', boxShadow: '0 0 6px var(--accent)' }}/>
           AI CONSULTANT
         </button>
 
