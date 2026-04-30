@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   FlaskConical, Workflow, LayoutDashboard, BarChart2, FolderOpen, Users,
   Settings, CircleHelp, Search, PanelLeft, type LucideIcon,
@@ -11,18 +11,26 @@ import { ReportView } from '../components/ReportView'
 import { ReportChat } from '../components/ReportChat'
 import { CryosisReport as GenesisReport, PipelineStage } from '../types'
 
+interface SavedProject {
+  id: string
+  diseaseName: string
+  savedAt: string
+  jobId: string
+  report: GenesisReport
+}
+
 const EXAMPLES = [
   "Parkinson's disease", "Alzheimer's disease",
   "Triple-negative breast cancer", "ALS", "Rheumatoid arthritis",
 ]
 
-const NAV_MAIN: { label: string; active: boolean; icon: LucideIcon }[] = [
-  { label: 'New Study', active: true, icon: FlaskConical },
-  { label: 'Agent Pipeline', active: false, icon: Workflow },
-  { label: 'Dashboard', active: false, icon: LayoutDashboard },
-  { label: 'Analytics', active: false, icon: BarChart2 },
-  { label: 'Projects', active: false, icon: FolderOpen },
-  { label: 'Team', active: false, icon: Users },
+const NAV_MAIN_ITEMS: { label: string; id: string; icon: LucideIcon }[] = [
+  { label: 'New Study',      id: 'new-study',   icon: FlaskConical },
+  { label: 'Agent Pipeline', id: 'pipeline',    icon: Workflow },
+  { label: 'Dashboard',      id: 'dashboard',   icon: LayoutDashboard },
+  { label: 'Analytics',      id: 'analytics',   icon: BarChart2 },
+  { label: 'Projects',       id: 'projects',    icon: FolderOpen },
+  { label: 'Team',           id: 'team',        icon: Users },
 ]
 
 const NAV_BOTTOM: { label: string; icon: LucideIcon }[] = [
@@ -69,11 +77,20 @@ function stageProgress(stage: PipelineStage, progress: number, idx: number): num
 
 export function HomePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [fadeIn, setFadeIn] = useState(false)
 
   useEffect(() => {
     setFadeIn(true)
   }, [])
+
+  const [activeTab, setActiveTab] = useState<string>(
+    (location.state as any)?.tab ?? 'new-study'
+  )
+  const [savedProjects, setSavedProjects] = useState<SavedProject[]>(() => {
+    try { return JSON.parse(localStorage.getItem('orion-saved-projects') ?? '[]') }
+    catch { return [] }
+  })
 
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
@@ -90,6 +107,20 @@ export function HomePage() {
   const [reportMounted, setReportMounted] = useState(false)
   const [reportVisible, setReportVisible] = useState(false)
   const [mainFadingOut, setMainFadingOut] = useState(false)
+
+  // Load a project passed via navigate('/home', { state: { loadProject } })
+  useEffect(() => {
+    const incoming = (location.state as any)?.loadProject as SavedProject | undefined
+    if (!incoming) return
+    setReport(incoming.report)
+    setJobId(incoming.jobId)
+    setSubmittedQuery(incoming.diseaseName)
+    setPhase('idle')
+    setMainFadingOut(true)
+    setReportMounted(true)
+    requestAnimationFrame(() => requestAnimationFrame(() => setReportVisible(true)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const { stage, progress, isComplete, isFailed } = useJobStream(jobId)
 
@@ -198,6 +229,38 @@ export function HomePage() {
     }
   }
 
+  const handleSaveProject = () => {
+    if (!report || !jobId) return
+    const already = savedProjects.some(p => p.jobId === jobId)
+    if (already) return
+    const project: SavedProject = {
+      id: crypto.randomUUID(),
+      diseaseName: report.disease_name,
+      savedAt: new Date().toISOString(),
+      jobId,
+      report,
+    }
+    const updated = [project, ...savedProjects]
+    setSavedProjects(updated)
+    localStorage.setItem('orion-saved-projects', JSON.stringify(updated))
+  }
+
+  const handleDeleteProject = (id: string) => {
+    const updated = savedProjects.filter(p => p.id !== id)
+    setSavedProjects(updated)
+    localStorage.setItem('orion-saved-projects', JSON.stringify(updated))
+  }
+
+  const handleLoadProject = (project: SavedProject) => {
+    setReport(project.report)
+    setJobId(project.jobId)
+    setSubmittedQuery(project.diseaseName)
+    setPhase('idle')
+    setActiveTab('new-study')
+    setReportMounted(true)
+    requestAnimationFrame(() => requestAnimationFrame(() => setReportVisible(true)))
+  }
+
   const stageProgs = STAGES.map((_, i) => stageProgress(stage, progress, i))
   const overall = isComplete ? 100 : Math.round(stageProgs.reduce((a, b) => a + b, 0) / STAGES.length * 100)
 
@@ -234,7 +297,7 @@ export function HomePage() {
               background: 'none', border: 'none', cursor: 'pointer', padding: 0,
               fontFamily: 'var(--serif)', fontSize: 22, letterSpacing: '-0.03em',
               color: 'rgba(255,255,255,0.90)',
-            }}>Genesis</button>
+            }}>Project Orion</button>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginTop: 4 }}>
               Drug Discovery
             </div>
@@ -242,19 +305,31 @@ export function HomePage() {
 
           <nav style={{ padding: '18px 12px', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1 }}>
-              {NAV_MAIN.map(item => (
-                <div key={item.label} style={{
-                  padding: '7px 12px', borderRadius: 6, marginBottom: 2,
-                  fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.06em',
-                  cursor: 'pointer',
-                  color: item.active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.38)',
-                  background: item.active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  display: 'flex', alignItems: 'center', gap: 9,
-                }}>
-                  <item.icon size={13} strokeWidth={1.5} style={{ flexShrink: 0, opacity: item.active ? 0.85 : 0.5 }} />
-                  {item.label}
-                </div>
-              ))}
+              {NAV_MAIN_ITEMS.map(item => {
+                const active = activeTab === item.id
+                return (
+                  <div key={item.label} onClick={() => item.id === 'projects' ? navigate('/projects') : setActiveTab(item.id)} style={{
+                    padding: '7px 12px', borderRadius: 6, marginBottom: 2,
+                    fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.06em',
+                    cursor: 'pointer',
+                    color: active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.38)',
+                    background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    transition: 'background 0.15s, color 0.15s',
+                  }}>
+                    <item.icon size={13} strokeWidth={1.5} style={{ flexShrink: 0, opacity: active ? 0.85 : 0.5 }} />
+                    {item.label}
+                    {item.id === 'projects' && savedProjects.length > 0 && (
+                      <span style={{
+                        marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 9,
+                        color: 'rgba(255,255,255,0.35)',
+                        background: 'rgba(255,255,255,0.08)', borderRadius: 4,
+                        padding: '1px 5px', lineHeight: 1.6,
+                      }}>{savedProjects.length}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
             <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '8px 4px' }} />
             {NAV_BOTTOM.map(item => (
@@ -388,7 +463,7 @@ export function HomePage() {
                 <p style={{
                   margin: '12px 0 0', fontFamily: 'var(--mono)', fontSize: 11,
                   letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.30)',
-                }}>Name a disease. Genesis runs the full pipeline.</p>
+                }}>Name a disease. Project Orion runs the full pipeline.</p>
               </div>
 
               {/* Input box */}
@@ -487,6 +562,7 @@ export function HomePage() {
               </div>
 
             </div>
+
           </div>
         </div>
       </div>
@@ -532,26 +608,38 @@ export function HomePage() {
                 background: 'none', border: 'none', cursor: 'pointer', padding: 0,
                 fontFamily: 'var(--serif)', fontSize: 22, letterSpacing: '-0.03em',
                 color: 'rgba(255,255,255,0.90)',
-              }}>Genesis</button>
+              }}>Project Orion</button>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginTop: 4 }}>
                 Drug Discovery
               </div>
             </div>
             <nav style={{ padding: '18px 12px', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div style={{ flex: 1 }}>
-                {NAV_MAIN.map(item => (
-                  <div key={item.label} style={{
-                    padding: '7px 12px', borderRadius: 6, marginBottom: 2,
-                    fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.06em',
-                    cursor: 'pointer',
-                    color: item.active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.38)',
-                    background: item.active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                    display: 'flex', alignItems: 'center', gap: 9,
-                  }}>
-                    <item.icon size={13} strokeWidth={1.5} style={{ flexShrink: 0, opacity: item.active ? 0.85 : 0.5 }} />
-                    {item.label}
-                  </div>
-                ))}
+                {NAV_MAIN_ITEMS.map(item => {
+                  const active = activeTab === item.id
+                  return (
+                    <div key={item.label} onClick={() => item.id === 'projects' ? navigate('/projects') : setActiveTab(item.id)} style={{
+                      padding: '7px 12px', borderRadius: 6, marginBottom: 2,
+                      fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.06em',
+                      cursor: 'pointer',
+                      color: active ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.38)',
+                      background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 9,
+                      transition: 'background 0.15s, color 0.15s',
+                    }}>
+                      <item.icon size={13} strokeWidth={1.5} style={{ flexShrink: 0, opacity: active ? 0.85 : 0.5 }} />
+                      {item.label}
+                      {item.id === 'projects' && savedProjects.length > 0 && (
+                        <span style={{
+                          marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 9,
+                          color: 'rgba(255,255,255,0.35)',
+                          background: 'rgba(255,255,255,0.08)', borderRadius: 4,
+                          padding: '1px 5px', lineHeight: 1.6,
+                        }}>{savedProjects.length}</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
               <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '8px 4px' }} />
               {NAV_BOTTOM.map(item => (
@@ -566,6 +654,7 @@ export function HomePage() {
                 </div>
               ))}
             </nav>
+
             <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
@@ -610,6 +699,8 @@ export function HomePage() {
               report={report!}
               onBack={handleReset}
               onDownload={handleDownload}
+              onSave={handleSaveProject}
+              isSaved={savedProjects.some(p => p.jobId === jobId)}
               jobId={jobId!}
             />
           </div>
@@ -681,7 +772,7 @@ function AgentChatFeed({ stageProgs, tick }: { stageProgs: number[]; tick: numbe
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.05em',
               color: 'rgba(255,255,255,0.45)',
-            }}>G</div>
+            }}>O</div>
 
             {/* Bubble */}
             <div style={{
@@ -691,7 +782,7 @@ function AgentChatFeed({ stageProgs, tick }: { stageProgs: number[]; tick: numbe
               backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.20em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>Genesis AI</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.20em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>Project Orion AI</span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.12em', color: done ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   {done
                     ? <><span style={{ fontSize: 8 }}>✓</span> complete</>

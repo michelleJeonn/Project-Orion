@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { LandingPage } from './pages/LandingPage'
 import { HomePage } from './pages/HomePage'
 import { JobPage } from './pages/JobPage'
+import { ProjectsPage } from './pages/ProjectsPage'
 import { DemoToggle } from './components/DemoToggle'
 import { StormBackground } from './components/StormBackground'
 
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/"          element={<LandingPage />} />
           <Route path="/home"      element={<HomePage />} />
           <Route path="/jobs/:jobId" element={<JobPage />} />
+          <Route path="/projects"   element={<ProjectsPage />} />
         </Routes>
       </div>
     </BrowserRouter>

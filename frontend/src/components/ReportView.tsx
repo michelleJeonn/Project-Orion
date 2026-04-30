@@ -101,10 +101,12 @@ interface ReportViewProps {
   report: GenesisReport
   onBack: () => void
   onDownload?: () => void
+  onSave?: () => void
+  isSaved?: boolean
   jobId?: string
 }
 
-export function ReportView({ report, onBack, onDownload, jobId }: ReportViewProps) {
+export function ReportView({ report, onBack, onDownload, onSave, isSaved, jobId }: ReportViewProps) {
   const [agent, setAgent] = useState<ReportAgent>('disease')
   const plate = useMemo(() => String(100 + Math.floor(Math.random() * 900)), [])
   const idx = AGENTS.findIndex(a => a.id === agent)
@@ -149,6 +151,21 @@ export function ReportView({ report, onBack, onDownload, jobId }: ReportViewProp
               fontSize: '.50rem', letterSpacing: '.20em', textTransform: 'uppercase',
               padding: '.25rem .7rem', borderRadius: 2,
             }}>↓ JSON</button>
+          )}
+          {onSave && (
+            <button
+              onClick={isSaved ? undefined : onSave}
+              style={{
+                background: isSaved ? 'rgba(228,147,206,0.06)' : 'transparent',
+                border: `1px solid ${isSaved ? 'rgba(228,147,206,0.22)' : D.pinkBorder}`,
+                cursor: isSaved ? 'default' : 'pointer',
+                color: isSaved ? 'rgba(228,147,206,0.45)' : D.pinkDim,
+                fontFamily: 'var(--mono)',
+                fontSize: '.50rem', letterSpacing: '.20em', textTransform: 'uppercase',
+                padding: '.25rem .7rem', borderRadius: 2,
+                transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+              }}
+            >{isSaved ? '✓ SAVED' : '⊕ SAVE'}</button>
           )}
         </div>
 

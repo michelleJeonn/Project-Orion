@@ -3,6 +3,38 @@ import { Send, Bot, User, Loader2, X } from 'lucide-react'
 import { GenesisReport } from '../types'
 import { isDemoMode } from '../demoConfig'
 
+const msgEntryStyle = `
+  @keyframes msgEntry {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0);   }
+  }
+`
+if (typeof document !== 'undefined' && !document.getElementById('report-chat-styles')) {
+  const s = document.createElement('style')
+  s.id = 'report-chat-styles'
+  s.textContent = msgEntryStyle
+  document.head.appendChild(s)
+}
+
+// ── Design tokens (dark) ────────────────────────────────────────
+const C = {
+  bg:         'rgba(6,6,10,0.97)',
+  panel:      'rgba(255,255,255,0.04)',
+  panel2:     'rgba(255,255,255,0.07)',
+  border:     'rgba(255,255,255,0.08)',
+  border2:    'rgba(255,255,255,0.13)',
+  text1:      'rgba(255,255,255,0.90)',
+  text2:      'rgba(255,255,255,0.58)',
+  text3:      'rgba(255,255,255,0.35)',
+  text4:      'rgba(255,255,255,0.22)',
+  pink:       'rgba(228,147,206,0.90)',
+  pinkDim:    'rgba(228,147,206,0.65)',
+  pinkBorder: 'rgba(228,147,206,0.30)',
+  pinkPanel:  'rgba(228,147,206,0.07)',
+  pinkGlow:   '0 0 12px rgba(228,147,206,0.30)',
+}
+
+// ── Markdown renderer ───────────────────────────────────────────
 function parseInline(str: string): React.ReactNode[] {
   const out: React.ReactNode[] = []
   const re = /(\*\*(.+?)\*\*|`([^`]+)`)/g
@@ -10,9 +42,13 @@ function parseInline(str: string): React.ReactNode[] {
   while ((m = re.exec(str)) !== null) {
     if (m.index > last) out.push(str.slice(last, m.index))
     if (m[0].startsWith('**'))
-      out.push(<strong key={m.index} style={{ color: '#ffffff', fontWeight: 500 }}>{m[2]}</strong>)
+      out.push(<strong key={m.index} style={{ color: C.text1, fontWeight: 500 }}>{m[2]}</strong>)
     else
-      out.push(<code key={m.index} style={{ fontFamily: 'var(--mono)', fontSize: '.62rem', color: 'rgba(255,91,42,.9)', background: 'rgba(255,91,42,.08)', padding: '.1rem .3rem', letterSpacing: '.04em' }}>{m[3]}</code>)
+      out.push(<code key={m.index} style={{
+        fontFamily: 'var(--mono)', fontSize: '.62rem',
+        color: C.pink, background: C.pinkPanel,
+        padding: '.1rem .3rem', letterSpacing: '.04em', borderRadius: 2,
+      }}>{m[3]}</code>)
     last = m.index + m[0].length
   }
   if (last < str.length) out.push(str.slice(last))
@@ -29,7 +65,7 @@ function ChatMarkdown({ text }: { text: string }) {
     if (line.startsWith('### ') || line.startsWith('## ') || line.startsWith('# ')) {
       const level = line.startsWith('# ') && !line.startsWith('## ') ? 1 : line.startsWith('## ') && !line.startsWith('### ') ? 2 : 3
       const content = line.slice(level + 1)
-      els.push(<p key={i} style={{ margin: '.6rem 0 .2rem', fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: '.9rem', color: '#ffffff' }}>{content}</p>)
+      els.push(<p key={i} style={{ margin: '.6rem 0 .2rem', fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: '.9rem', color: C.text1 }}>{content}</p>)
       i++
     } else if (line.startsWith('|')) {
       const rows: string[] = []
@@ -38,20 +74,20 @@ function ChatMarkdown({ text }: { text: string }) {
       const parseCells = (r: string) => r.split('|').slice(1, -1).map(c => c.trim())
       const [head, ...body] = dataRows
       els.push(
-        <div key={`t${i}`} style={{ overflowX: 'auto', margin: '.4rem 0', border: '1px solid var(--hair)' }}>
+        <div key={`t${i}`} style={{ overflowX: 'auto', margin: '.5rem 0', border: `1px solid ${C.border}` }}>
           <table style={{ fontSize: '.62rem', width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)' }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--hair)' }}>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 {parseCells(head).map((c, j) => (
-                  <th key={j} style={{ padding: '.3rem .6rem', textAlign: 'left', color: '#ffffff', letterSpacing: '.15em', fontWeight: 400, textTransform: 'uppercase' }}>{parseInline(c)}</th>
+                  <th key={j} style={{ padding: '.3rem .6rem', textAlign: 'left', color: C.text2, letterSpacing: '.15em', fontWeight: 400, textTransform: 'uppercase' }}>{parseInline(c)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {body.map((row, ri) => (
-                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <tr key={ri} style={{ borderBottom: `1px solid rgba(255,255,255,0.05)` }}>
                   {parseCells(row).map((c, j) => (
-                    <td key={j} style={{ padding: '.3rem .6rem', color: '#ffffff' }}>{parseInline(c)}</td>
+                    <td key={j} style={{ padding: '.3rem .6rem', color: C.text1 }}>{parseInline(c)}</td>
                   ))}
                 </tr>
               ))}
@@ -67,9 +103,9 @@ function ChatMarkdown({ text }: { text: string }) {
       els.push(
         <ul key={`ul${i}`} style={{ margin: '.3rem 0', padding: 0, listStyle: 'none' }}>
           {items.map((item, j) => (
-            <li key={j} style={{ display: 'flex', gap: '.5rem', color: '#ffffff', padding: '.15rem 0' }}>
-              <span style={{ color: 'var(--accent)', flexShrink: 0 }}>·</span>
-              <span style={{ fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.5 }}>{parseInline(item)}</span>
+            <li key={j} style={{ display: 'flex', gap: '.5rem', padding: '.18rem 0' }}>
+              <span style={{ color: C.pink, flexShrink: 0, marginTop: 1 }}>·</span>
+              <span style={{ fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.55, color: C.text1 }}>{parseInline(item)}</span>
             </li>
           ))}
         </ul>
@@ -84,7 +120,7 @@ function ChatMarkdown({ text }: { text: string }) {
         !lines[i].startsWith('- ') && !lines[i].startsWith('* ')
       ) { buf.push(lines[i]); i++ }
       els.push(
-        <p key={`p${i}`} style={{ margin: '.25rem 0', fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.55, color: '#ffffff' }}>
+        <p key={`p${i}`} style={{ margin: '.2rem 0', fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.6, color: C.text1 }}>
           {parseInline(buf.join(' '))}
         </p>
       )
@@ -93,6 +129,7 @@ function ChatMarkdown({ text }: { text: string }) {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{els}</div>
 }
 
+// ── Types ───────────────────────────────────────────────────────
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -105,6 +142,7 @@ interface ReportChatProps {
   onClose?: () => void
 }
 
+// ── Component ───────────────────────────────────────────────────
 export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
   const topTarget = report.target_insights[0]?.target_gene ?? 'the top target'
   const suggestedQuestions = [
@@ -122,6 +160,7 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
   const [showSuggestions, setShowSuggestions] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -139,35 +178,24 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
     setIsStreaming(true)
     try {
       if (isDemoMode()) {
-        const dummyResponse = "This is a demo mode response. I cannot provide real insight without the backend, but I can confirm that the top candidate passes the Lipinski rule of 5 and shows strong theoretical BBB penetration.";
-        const words = dummyResponse.split(/(?= )/); // keep spaces
-        let i = 0;
-        let accumulated = '';
-        
-        await new Promise(r => setTimeout(r, 500)); // artificial delay
-        
+        const dummyResponse = "This is a demo mode response. I cannot provide real insight without the backend, but I can confirm that the top candidate passes the Lipinski rule of 5 and shows strong theoretical BBB penetration."
+        const words = dummyResponse.split(/(?= )/)
+        let i = 0, accumulated = ''
+        await new Promise(r => setTimeout(r, 500))
         const timer = setInterval(() => {
           if (i >= words.length) {
-            clearInterval(timer);
-            setMessages(prev => {
-              const updated = [...prev];
-              updated[updated.length - 1] = { role: 'assistant', content: accumulated };
-              return updated;
-            });
-            setIsStreaming(false);
-            return;
+            clearInterval(timer)
+            setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: accumulated }; return u })
+            setIsStreaming(false)
+            return
           }
-          accumulated += words[i];
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = { role: 'assistant', content: accumulated, streaming: true };
-            return updated;
-          });
-          i++;
-        }, 50);
-        return;
+          accumulated += words[i]
+          setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: accumulated, streaming: true }; return u })
+          i++
+        }, 50)
+        return
       }
-      
+
       const response = await fetch(`/api/chat/${jobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,26 +216,14 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
             const parsed = JSON.parse(data)
             if (parsed.text) {
               accumulated += parsed.text
-              setMessages(prev => {
-                const updated = [...prev]
-                updated[updated.length - 1] = { role: 'assistant', content: accumulated, streaming: true }
-                return updated
-              })
+              setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: accumulated, streaming: true }; return u })
             }
           } catch { /* skip malformed chunks */ }
         }
       }
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: accumulated }
-        return updated
-      })
+      setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: accumulated }; return u })
     } catch {
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: 'Something went wrong. Please try again.' }
-        return updated
-      })
+      setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content: 'Something went wrong. Please try again.' }; return u })
     } finally {
       if (!isDemoMode()) setIsStreaming(false)
     }
@@ -219,61 +235,127 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
 
   return (
     <div style={{
-      height: '100vh', display: 'flex', flexDirection: 'column',
-      background: 'rgba(6,6,8,0.92)', backdropFilter: 'blur(24px)',
-      borderLeft: '1px solid var(--hair)',
+      height: '100%', display: 'flex', flexDirection: 'column',
+      background: C.bg,
+      borderLeft: `1px solid ${C.border}`,
     }}>
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '.85rem 1.1rem',
-        borderBottom: '1px solid var(--hair)', flexShrink: 0,
+        padding: '18px 20px',
+        borderBottom: `1px solid ${C.border}`,
+        flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.8rem' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'block', boxShadow: '0 0 8px var(--accent)' }}/>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          {/* live dot */}
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            background: C.pink,
+            boxShadow: `0 0 0 3px rgba(120,60,220,0.18), ${C.pinkGlow}`,
+          }}/>
           <div>
-            <div className="hud-label">AI RESEARCH CONSULTANT</div>
-            <div className="hud-micro" style={{ marginTop: '.15rem', color: 'var(--ink-3)' }}>ASK ABOUT THIS DOSSIER</div>
-          </div>
-        </div>
-        {onClose && (
-          <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'var(--ink-3)', padding: '.3rem',
-          }}>
-            <X size={14}/>
-          </button>
-        )}
-      </div>
-
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '.8rem', minHeight: 0 }}>
-        {messages.map((msg, i) => (
-          <div key={i} style={{ display: 'flex', gap: '.6rem', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
             <div style={{
-              width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 2,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: msg.role === 'user' ? 'rgba(255,91,42,.2)' : 'rgba(255,255,255,.08)',
-              border: `1px solid ${msg.role === 'user' ? 'rgba(255,91,42,.4)' : 'var(--hair)'}`,
+              fontFamily: 'var(--mono)',
+              fontSize: 11,
+              fontWeight: 500,
+              letterSpacing: '0.20em',
+              textTransform: 'uppercase',
+              color: C.text1,
             }}>
-              {msg.role === 'user'
-                ? <User size={11} color="rgba(255,91,42,.9)"/>
-                : <Bot size={11} color="var(--ink-3)"/>
-              }
+              AI Research Consultant
             </div>
             <div style={{
-              maxWidth: '85%', padding: '.6rem .8rem',
-              background: msg.role === 'user' ? 'rgba(255,91,42,.12)' : 'rgba(255,255,255,.05)',
-              border: `1px solid ${msg.role === 'user' ? 'rgba(255,91,42,.25)' : 'var(--hair)'}`,
+              fontFamily: 'var(--mono)',
+              fontSize: 9,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: C.text3,
+              marginTop: 4,
+            }}>
+              Ask about this dossier
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {onClose && (
+            <button
+              onClick={onClose}
+              onMouseEnter={e => {
+                const b = e.currentTarget as HTMLButtonElement
+                b.style.background = C.panel2
+                b.style.color = C.text1
+              }}
+              onMouseLeave={e => {
+                const b = e.currentTarget as HTMLButtonElement
+                b.style.background = 'transparent'
+                b.style.color = C.text3
+              }}
+              style={{
+                background: 'transparent', border: `1px solid ${C.border}`,
+                cursor: 'pointer', color: C.text3,
+                width: 28, height: 28, borderRadius: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              <X size={13}/>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Messages ── */}
+      <div style={{
+        flex: 1, overflowY: 'auto',
+        padding: '20px 16px',
+        display: 'flex', flexDirection: 'column', gap: 14,
+        minHeight: 0,
+      }}>
+        {messages.map((msg, i) => (
+          <div key={i} style={{
+            display: 'flex',
+            flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            gap: 10,
+            animation: 'msgEntry 0.25s ease-out both',
+          }}>
+            {/* avatar */}
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: msg.role === 'user' ? C.panel : C.pinkPanel,
+              border: `1px solid ${msg.role === 'user' ? C.border : C.pinkBorder}`,
+            }}>
+              {msg.role === 'user'
+                ? <User size={12} color={C.text2}/>
+                : <Bot size={12} color={C.pink}/>
+              }
+            </div>
+
+            {/* bubble */}
+            <div style={{
+              maxWidth: '82%',
+              padding: '10px 14px',
+              background: msg.role === 'user' ? C.panel : C.pinkPanel,
+              border: `1px solid ${msg.role === 'user' ? C.border : C.pinkBorder}`,
+              borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
             }}>
               {msg.streaming && !msg.content
-                ? <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }} className="hud-micro">
-                    <Loader2 size={10} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }}/>
-                    COMPOSING…
+                ? <div style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    fontFamily: 'var(--mono)', fontSize: 9,
+                    letterSpacing: '0.20em', textTransform: 'uppercase',
+                    color: C.text3,
+                  }}>
+                    <Loader2 size={10} style={{ animation: 'spin 1s linear infinite', color: C.pinkDim }}/>
+                    Composing…
                   </div>
                 : msg.role === 'assistant'
                   ? <ChatMarkdown text={msg.content}/>
-                  : <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: '.88rem', color: '#ffffff' }}>{msg.content}</p>
+                  : <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: '.88rem', color: C.text1, lineHeight: 1.55 }}>
+                      {msg.content}
+                    </p>
               }
             </div>
           </div>
@@ -281,19 +363,46 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
         <div ref={messagesEndRef}/>
       </div>
 
-      {/* Suggested questions */}
+      {/* ── Suggested queries ── */}
       {showSuggestions && (
-        <div style={{ padding: '.75rem 1rem', borderTop: '1px solid var(--hair)', flexShrink: 0 }}>
-          <div className="hud-micro" style={{ marginBottom: '.5rem' }}>SUGGESTED QUERIES</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+        <div style={{
+          padding: '12px 16px 14px',
+          borderTop: `1px solid ${C.border}`,
+          flexShrink: 0,
+        }}>
+          <div style={{
+            fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.20em',
+            textTransform: 'uppercase', color: C.text4,
+            marginBottom: 9,
+          }}>
+            Suggested Queries
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {suggestedQuestions.map(q => (
-              <button key={q} onClick={() => sendMessage(q)} style={{
-                textAlign: 'left', background: 'transparent',
-                border: '1px solid var(--hair)', padding: '.4rem .7rem',
-                cursor: 'pointer', fontFamily: 'var(--serif)', fontStyle: 'italic',
-                fontSize: '.82rem', color: '#ffffff',
-                transition: 'border-color .2s, color .2s',
-              }}>
+              <button
+                key={q}
+                onClick={() => sendMessage(q)}
+                onMouseEnter={e => {
+                  const b = e.currentTarget as HTMLButtonElement
+                  b.style.borderColor = C.pinkBorder
+                  b.style.color = C.text1
+                  b.style.background = C.pinkPanel
+                }}
+                onMouseLeave={e => {
+                  const b = e.currentTarget as HTMLButtonElement
+                  b.style.borderColor = C.border
+                  b.style.color = C.text2
+                  b.style.background = 'transparent'
+                }}
+                style={{
+                  textAlign: 'left', background: 'transparent',
+                  border: `1px solid ${C.border}`,
+                  padding: '9px 14px', cursor: 'pointer', borderRadius: 12,
+                  fontFamily: 'var(--serif)', fontStyle: 'italic',
+                  fontSize: '.84rem', color: C.text2,
+                  transition: 'border-color 0.15s, color 0.15s, background 0.15s',
+                }}
+              >
                 {q}
               </button>
             ))}
@@ -301,24 +410,66 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
         </div>
       )}
 
-      {/* Input */}
-      <div style={{ borderTop: '1px solid var(--hair)', padding: '.75rem 1rem', flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-end' }}>
+      {/* ── Input ── */}
+      <div style={{ borderTop: `1px solid ${C.border}`, padding: '14px 16px', flexShrink: 0 }}>
+        <div
+          ref={inputWrapRef}
+          style={{
+            display: 'flex', gap: 8, alignItems: 'flex-end',
+            background: C.panel,
+            border: `1px solid ${C.border2}`,
+            borderRadius: 16, padding: '8px 8px 8px 8px',
+            transition: 'border-color 0.15s',
+          }}
+          onFocusCapture={() => {
+            if (inputWrapRef.current) inputWrapRef.current.style.borderColor = C.pinkBorder
+          }}
+          onBlurCapture={() => {
+            if (inputWrapRef.current) inputWrapRef.current.style.borderColor = C.border2
+          }}
+        >
+          {/* Import context */}
+          <button
+            title="Import previous conversations or context"
+            onMouseEnter={e => {
+              const b = e.currentTarget as HTMLButtonElement
+              b.style.background = C.pinkPanel
+              b.style.borderColor = C.pinkBorder
+              b.style.color = C.pink
+            }}
+            onMouseLeave={e => {
+              const b = e.currentTarget as HTMLButtonElement
+              b.style.background = 'transparent'
+              b.style.borderColor = C.border
+              b.style.color = C.text3
+            }}
+            style={{
+              flexShrink: 0, background: 'transparent', border: `1px solid ${C.border}`,
+              cursor: 'pointer', color: C.text3,
+              width: 32, height: 32, borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 20, lineHeight: 1, fontWeight: 300,
+              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+            }}
+          >
+            +
+          </button>
+
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Inquire about targets, molecules, next steps…"
-            rows={2}
+            placeholder="Ask about targets, molecules, next steps…"
+            rows={1}
             disabled={isStreaming}
             style={{
-              flex: 1, resize: 'none', maxHeight: 80,
-              background: 'rgba(255,255,255,.04)',
-              border: '1px solid var(--hair)',
-              outline: 'none', padding: '.5rem .7rem',
-              color: 'var(--ink-1)', fontFamily: 'var(--serif)', fontSize: '.88rem',
-              lineHeight: 1.5, letterSpacing: '.01em',
+              flex: 1, resize: 'none', maxHeight: 90,
+              background: 'transparent', border: 'none', outline: 'none',
+              padding: '4px 0',
+              color: C.text1,
+              fontFamily: 'var(--serif)', fontSize: '.88rem',
+              lineHeight: 1.55, letterSpacing: '.01em',
               opacity: isStreaming ? 0.5 : 1,
             }}
           />
@@ -326,19 +477,24 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
             onClick={() => sendMessage()}
             disabled={!input.trim() || isStreaming}
             style={{
-              flexShrink: 0, width: 36, height: 36,
-              background: 'rgba(255,91,42,.18)',
-              border: '1px solid rgba(255,91,42,.4)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: (!input.trim() || isStreaming) ? 0.3 : 1,
-              transition: 'opacity .2s',
+              flexShrink: 0, width: 32, height: 32,
+              background: (!input.trim() || isStreaming) ? 'transparent' : C.pinkPanel,
+              border: `1px solid ${(!input.trim() || isStreaming) ? C.border : C.pinkBorder}`,
+              borderRadius: 10, cursor: (!input.trim() || isStreaming) ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.15s, border-color 0.15s',
+              opacity: (!input.trim() || isStreaming) ? 0.35 : 1,
             }}
           >
-            <Send size={14} color="var(--accent)"/>
+            <Send size={13} color={(!input.trim() || isStreaming) ? C.text3 : C.pink}/>
           </button>
         </div>
-        <div className="hud-micro" style={{ marginTop: '.4rem', textAlign: 'center', color: 'var(--ink-3)' }}>
-          ENTER TO SEND · SHIFT+ENTER FOR NEW LINE
+        <div style={{
+          fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.14em',
+          textTransform: 'uppercase', color: C.text4,
+          textAlign: 'center', marginTop: 8,
+        }}>
+          Enter to send · Shift+Enter for new line
         </div>
       </div>
     </div>
