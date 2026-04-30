@@ -555,16 +555,83 @@ async def similar_molecules(job_id: str, molecule_id: str, top_k: int = 10, smil
     return results
 
 
+def _chemical_space_from_report(report: CryosisReport) -> list[dict]:
+    """
+    Compute PCA(3D) from the molecules stored in a completed report.
+    Used as a fallback when Snowflake is not configured or has no data yet.
+    """
+    try:
+        import numpy as np
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA as SkPCA
+
+        rows = []
+        for c in report.top_candidates:
+            a = c.molecule.admet
+            rows.append({
+                "molecule_id":       c.molecule.molecule_id or f"mol-{len(rows)}",
+                "smiles":            c.molecule.smiles,
+                "target":            c.target_uniprot_id,
+                "disease":           report.disease_name,
+                "generation_method": c.molecule.generation_method or "unknown",
+                "qed":               a.qed_score   or 0.0,
+                "logp":              a.log_p        or 0.0,
+                "molecular_weight":  a.mw           or 0.0,
+                "tpsa":              a.tpsa         or 0.0,
+                "h_donors":          float(a.hbd or 0),
+                "h_acceptors":       float(a.hba or 0),
+                "rotatable_bonds":   float(a.rotatable_bonds or 0),
+                "sa_score":          a.synthetic_accessibility or 0.0,
+                "binding_score":     c.binding_affinity_kcal,
+            })
+
+        if len(rows) < 3:
+            return []
+
+        feature_cols = [
+            "qed", "logp", "molecular_weight", "tpsa",
+            "h_donors", "h_acceptors", "rotatable_bonds",
+            "sa_score", "binding_score",
+        ]
+        X = np.array([[r[c] for c in feature_cols] for r in rows], dtype=float)
+        X_scaled = StandardScaler().fit_transform(X)
+        n = min(3, X_scaled.shape[1], X_scaled.shape[0])
+        coords = SkPCA(n_components=n).fit_transform(X_scaled)
+        if coords.shape[1] < 3:
+            coords = np.hstack([coords, np.zeros((coords.shape[0], 3 - coords.shape[1]))])
+
+        return [
+            {
+                **{k: rows[i][k] for k in ("molecule_id", "smiles", "target", "disease", "generation_method", "qed", "binding_score")},
+                "x": round(float(coords[i, 0]), 4),
+                "y": round(float(coords[i, 1]), 4),
+                "z": round(float(coords[i, 2]), 4),
+            }
+            for i in range(len(rows))
+        ]
+    except Exception as e:
+        logger.warning(f"Report-based PCA fallback failed: {e}")
+        return []
+
+
 @app.get("/api/snowflake/chemical_space/{job_id}")
-async def chemical_space(job_id: str):
+async def chemical_space(job_id: str, db: AsyncSession = Depends(get_db)):
     """
     PCA(3D) projection of all molecules in a job for the Chemical Space Explorer.
-    Returns {available, points} so the frontend can distinguish "not configured"
-    from "no data yet for this job".
+    Primary: Snowflake MOLECULE_FEATURES table.
+    Fallback: computes PCA in-memory from the completed report in PostgreSQL,
+    so the chemical space works for every job even without Snowflake.
     """
-    available = snowflake_is_available()
-    points = snowflake_analytics.chemical_space_pca(job_id) if available else []
-    return {"available": available, "points": points}
+    sf_available = snowflake_is_available()
+    points = snowflake_analytics.chemical_space_pca(job_id) if sf_available else []
+
+    if not points:
+        job = await crud.get_job(db, job_id)
+        if job and job.result:
+            report = CryosisReport.model_validate(job.result)
+            points = _chemical_space_from_report(report)
+
+    return {"available": bool(points), "points": points}
 
 
 @app.get("/api/snowflake/analytics")

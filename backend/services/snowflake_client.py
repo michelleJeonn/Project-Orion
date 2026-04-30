@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS MOLECULE_FEATURES (
     h_acceptors         FLOAT,
     rotatable_bonds     FLOAT,
     generation_method   STRING,
+    feature_vector      VECTOR(FLOAT, 9),
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 """
@@ -144,6 +145,7 @@ _DDL_MOLECULE_FEATURES_MIGRATIONS = [
     "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS h_acceptors FLOAT",
     "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS rotatable_bonds FLOAT",
     "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS generation_method STRING",
+    "ALTER TABLE MOLECULE_FEATURES ADD COLUMN IF NOT EXISTS feature_vector VECTOR(FLOAT, 9)",
 ]
 
 _DDL_GENESIS_REPORTS = """
@@ -154,9 +156,14 @@ CREATE TABLE IF NOT EXISTS GENESIS_REPORTS (
     report_text         STRING,
     pathway_summary     STRING,
     molecule_rationale  STRING,
+    report_embedding    VECTOR(FLOAT, 768),
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 """
+
+_DDL_GENESIS_REPORTS_MIGRATIONS = [
+    "ALTER TABLE GENESIS_REPORTS ADD COLUMN IF NOT EXISTS report_embedding VECTOR(FLOAT, 768)",
+]
 
 
 def init_snowflake_tables() -> None:
@@ -169,7 +176,7 @@ def init_snowflake_tables() -> None:
             cur = conn.cursor()
             cur.execute(_DDL_MOLECULE_FEATURES)
             cur.execute(_DDL_GENESIS_REPORTS)
-            for migration in _DDL_MOLECULE_FEATURES_MIGRATIONS:
+            for migration in _DDL_MOLECULE_FEATURES_MIGRATIONS + _DDL_GENESIS_REPORTS_MIGRATIONS:
                 try:
                     cur.execute(migration)
                 except Exception:

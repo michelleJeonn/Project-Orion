@@ -10,7 +10,7 @@ function parseInline(str: string): React.ReactNode[] {
   while ((m = re.exec(str)) !== null) {
     if (m.index > last) out.push(str.slice(last, m.index))
     if (m[0].startsWith('**'))
-      out.push(<strong key={m.index} style={{ color: 'var(--ink-1)', fontWeight: 500 }}>{m[2]}</strong>)
+      out.push(<strong key={m.index} style={{ color: '#ffffff', fontWeight: 500 }}>{m[2]}</strong>)
     else
       out.push(<code key={m.index} style={{ fontFamily: 'var(--mono)', fontSize: '.62rem', color: 'rgba(255,91,42,.9)', background: 'rgba(255,91,42,.08)', padding: '.1rem .3rem', letterSpacing: '.04em' }}>{m[3]}</code>)
     last = m.index + m[0].length
@@ -29,7 +29,7 @@ function ChatMarkdown({ text }: { text: string }) {
     if (line.startsWith('### ') || line.startsWith('## ') || line.startsWith('# ')) {
       const level = line.startsWith('# ') && !line.startsWith('## ') ? 1 : line.startsWith('## ') && !line.startsWith('### ') ? 2 : 3
       const content = line.slice(level + 1)
-      els.push(<p key={i} style={{ margin: '.6rem 0 .2rem', fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: '.9rem', color: 'var(--ink-1)' }}>{content}</p>)
+      els.push(<p key={i} style={{ margin: '.6rem 0 .2rem', fontFamily: 'var(--serif)', fontStyle: 'italic', fontSize: '.9rem', color: '#ffffff' }}>{content}</p>)
       i++
     } else if (line.startsWith('|')) {
       const rows: string[] = []
@@ -43,7 +43,7 @@ function ChatMarkdown({ text }: { text: string }) {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--hair)' }}>
                 {parseCells(head).map((c, j) => (
-                  <th key={j} style={{ padding: '.3rem .6rem', textAlign: 'left', color: 'var(--ink-3)', letterSpacing: '.15em', fontWeight: 400, textTransform: 'uppercase' }}>{parseInline(c)}</th>
+                  <th key={j} style={{ padding: '.3rem .6rem', textAlign: 'left', color: '#ffffff', letterSpacing: '.15em', fontWeight: 400, textTransform: 'uppercase' }}>{parseInline(c)}</th>
                 ))}
               </tr>
             </thead>
@@ -51,7 +51,7 @@ function ChatMarkdown({ text }: { text: string }) {
               {body.map((row, ri) => (
                 <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                   {parseCells(row).map((c, j) => (
-                    <td key={j} style={{ padding: '.3rem .6rem', color: 'var(--ink-2)' }}>{parseInline(c)}</td>
+                    <td key={j} style={{ padding: '.3rem .6rem', color: '#ffffff' }}>{parseInline(c)}</td>
                   ))}
                 </tr>
               ))}
@@ -67,7 +67,7 @@ function ChatMarkdown({ text }: { text: string }) {
       els.push(
         <ul key={`ul${i}`} style={{ margin: '.3rem 0', padding: 0, listStyle: 'none' }}>
           {items.map((item, j) => (
-            <li key={j} style={{ display: 'flex', gap: '.5rem', color: 'var(--ink-2)', padding: '.15rem 0' }}>
+            <li key={j} style={{ display: 'flex', gap: '.5rem', color: '#ffffff', padding: '.15rem 0' }}>
               <span style={{ color: 'var(--accent)', flexShrink: 0 }}>·</span>
               <span style={{ fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.5 }}>{parseInline(item)}</span>
             </li>
@@ -84,7 +84,7 @@ function ChatMarkdown({ text }: { text: string }) {
         !lines[i].startsWith('- ') && !lines[i].startsWith('* ')
       ) { buf.push(lines[i]); i++ }
       els.push(
-        <p key={`p${i}`} style={{ margin: '.25rem 0', fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.55, color: 'var(--ink-2)' }}>
+        <p key={`p${i}`} style={{ margin: '.25rem 0', fontFamily: 'var(--serif)', fontSize: '.88rem', lineHeight: 1.55, color: '#ffffff' }}>
           {parseInline(buf.join(' '))}
         </p>
       )
@@ -273,7 +273,7 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
                   </div>
                 : msg.role === 'assistant'
                   ? <ChatMarkdown text={msg.content}/>
-                  : <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: '.88rem', color: 'var(--ink-1)' }}>{msg.content}</p>
+                  : <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: '.88rem', color: '#ffffff' }}>{msg.content}</p>
               }
             </div>
           </div>
@@ -291,7 +291,7 @@ export function ReportChat({ jobId, report, onClose }: ReportChatProps) {
                 textAlign: 'left', background: 'transparent',
                 border: '1px solid var(--hair)', padding: '.4rem .7rem',
                 cursor: 'pointer', fontFamily: 'var(--serif)', fontStyle: 'italic',
-                fontSize: '.82rem', color: 'var(--ink-2)',
+                fontSize: '.82rem', color: '#ffffff',
                 transition: 'border-color .2s, color .2s',
               }}>
                 {q}

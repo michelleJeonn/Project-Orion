@@ -1,7 +1,7 @@
 """
-Cryosis MCP Server — optional tool-access layer for Claude agents.
+Project Orion MCP Server — optional tool-access layer for Claude agents.
 
-Exposes the Cryosis pipeline as MCP tools so Claude (or any MCP client)
+Exposes the Project Orion pipeline as MCP tools so Claude (or any MCP client)
 can call individual steps directly without going through the REST API.
 
 Run standalone:
@@ -29,7 +29,7 @@ from backend.models.disease import Target
 from backend.models.molecule import MoleculeLibrary, Molecule
 from backend.molecular.filters import compute_admet
 
-mcp = FastMCP("Cryosis Drug Discovery")
+mcp = FastMCP("Project OrionDrug Discovery")
 
 _molgen = MolecularGenerationAgent()
 _docking = DockingAgent()

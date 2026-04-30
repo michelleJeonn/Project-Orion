@@ -94,19 +94,19 @@ class SnowflakeAnalytics:
                 cur = conn.cursor()
                 inserted = 0
                 for row in rows:
+                    vec_json = json.dumps(_build_feature_vector(row))
                     cur.execute(
                         """
                         INSERT INTO MOLECULE_FEATURES (
                             job_id, disease, target, molecule_id, smiles,
                             qed, logp, tpsa, sa_score, binding_score,
                             molecular_weight, h_donors, h_acceptors,
-                            rotatable_bonds, generation_method
-                        ) VALUES (
+                            rotatable_bonds, generation_method, feature_vector
+                        ) SELECT
                             %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s,
                             %s, %s, %s,
-                            %s, %s
-                        )
+                            %s, %s, TO_VECTOR(%s, FLOAT, 9)
                         """,
                         (
                             row["job_id"], row["disease"], row["target"],
@@ -115,7 +115,7 @@ class SnowflakeAnalytics:
                             row["sa_score"], row["binding_score"],
                             row["molecular_weight"], row["h_donors"],
                             row["h_acceptors"], row["rotatable_bonds"],
-                            row["generation_method"],
+                            row["generation_method"], vec_json,
                         ),
                     )
                     inserted += 1
@@ -137,7 +137,6 @@ class SnowflakeAnalytics:
             return
 
         try:
-            # Flatten report into text fields for keyword search
             executive_summary = report.get("executive_summary", "")
             methodology_notes = report.get("methodology_notes", "")
             safety_text = " | ".join(report.get("safety_flags", []))
@@ -159,23 +158,47 @@ class SnowflakeAnalytics:
             pathway_summary = " ".join(filter(None, pathway_parts))
             molecule_rationale = " ".join(filter(None, rationale_parts))
 
+            # Cortex model has an input limit — truncate to 4 000 chars
+            embed_text = (report_text or "")[:4000]
+
             with get_connection() as conn:
                 cur = conn.cursor()
-                cur.execute(
-                    """
-                    INSERT INTO GENESIS_REPORTS (
-                        job_id, disease, report_json,
-                        report_text, pathway_summary, molecule_rationale
-                    ) SELECT %s, %s, PARSE_JSON(%s), %s, %s, %s
-                    """,
-                    (
-                        job_id, disease, json.dumps(report),
-                        report_text, pathway_summary, molecule_rationale,
-                    ),
-                )
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO GENESIS_REPORTS (
+                            job_id, disease, report_json,
+                            report_text, pathway_summary, molecule_rationale,
+                            report_embedding
+                        ) SELECT %s, %s, PARSE_JSON(%s), %s, %s, %s,
+                            SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', %s)
+                        """,
+                        (
+                            job_id, disease, json.dumps(report),
+                            report_text, pathway_summary, molecule_rationale,
+                            embed_text,
+                        ),
+                    )
+                    logger.info(f"Stored report with Cortex embedding for job {job_id}")
+                except Exception as cortex_exc:
+                    logger.warning(
+                        f"Cortex embedding unavailable ({cortex_exc}); storing report without vector"
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO GENESIS_REPORTS (
+                            job_id, disease, report_json,
+                            report_text, pathway_summary, molecule_rationale
+                        ) SELECT %s, %s, PARSE_JSON(%s), %s, %s, %s
+                        """,
+                        (
+                            job_id, disease, json.dumps(report),
+                            report_text, pathway_summary, molecule_rationale,
+                        ),
+                    )
+                    logger.info(f"Stored report (no embedding) for job {job_id}")
                 conn.commit()
                 cur.close()
-            logger.info(f"Stored report in Snowflake for job {job_id}")
         except Exception as exc:
             logger.warning(f"Snowflake report store failed for job {job_id}: {exc}")
 
@@ -189,9 +212,72 @@ class SnowflakeAnalytics:
         smiles: str = "",
     ) -> list[dict]:
         """
-        Return top-K nearest molecules by L2 distance computed in Python.
-        Fetches all molecules, builds feature vectors, ranks by distance.
+        Return top-K nearest molecules by L2 distance.
+        Primary: SQL VECTOR_L2_DISTANCE on the feature_vector column (all computation in Snowflake).
+        Fallback: Python NumPy L2 on raw float columns for rows that predate the vector column.
         """
+        if not is_available():
+            return []
+        try:
+            with get_connection() as conn:
+                cur = conn.cursor()
+                id_clause   = molecule_id if molecule_id else "__NO_MATCH__"
+                smi_clause  = smiles      if smiles      else "__NO_MATCH__"
+                cur.execute(
+                    """
+                    WITH query_mol AS (
+                        SELECT feature_vector, smiles
+                        FROM MOLECULE_FEATURES
+                        WHERE (molecule_id = %s OR smiles = %s)
+                          AND feature_vector IS NOT NULL
+                        LIMIT 1
+                    )
+                    SELECT
+                        m.molecule_id, m.smiles, m.disease, m.target,
+                        m.qed, m.binding_score, m.generation_method,
+                        VECTOR_L2_DISTANCE(m.feature_vector, q.feature_vector) AS dist
+                    FROM MOLECULE_FEATURES m
+                    CROSS JOIN query_mol q
+                    WHERE m.smiles != q.smiles
+                      AND m.feature_vector IS NOT NULL
+                    ORDER BY dist ASC
+                    LIMIT %s
+                    """,
+                    (id_clause, smi_clause, min(top_k, 50)),
+                )
+                rows = cur.fetchall()
+                cur.close()
+
+            if rows:
+                return [
+                    {
+                        "molecule_id":       r[0],
+                        "smiles":            r[1],
+                        "disease":           r[2],
+                        "target":            r[3],
+                        "qed":               _safe_float(r[4]),
+                        "binding_score":     _safe_float(r[5]),
+                        "generation_method": r[6],
+                        "similarity_score":  round(1.0 / (1.0 + float(r[7])), 4),
+                    }
+                    for r in rows
+                ]
+
+            # No vector rows found — fall back to Python for pre-vector data
+            logger.info("No vectorised rows found; falling back to Python L2 similarity")
+            return self._similar_molecules_python(molecule_id, top_k, smiles)
+
+        except Exception as exc:
+            logger.warning(f"Snowflake vector similarity failed ({exc}); falling back to Python")
+            return self._similar_molecules_python(molecule_id, top_k, smiles)
+
+    def _similar_molecules_python(
+        self,
+        molecule_id: str,
+        top_k: int,
+        smiles: str,
+    ) -> list[dict]:
+        """NumPy L2 fallback: fetches all float columns and computes distance in Python."""
         if not is_available():
             return []
         try:
@@ -214,7 +300,6 @@ class SnowflakeAnalytics:
             if not all_rows:
                 return []
 
-            # Look up by molecule_id first, then fall back to SMILES (handles legacy empty-id rows)
             query_row = next((r for r in all_rows if r["molecule_id"] == molecule_id and molecule_id), None)
             if not query_row and smiles:
                 query_row = next((r for r in all_rows if r["smiles"] == smiles), None)
@@ -225,7 +310,6 @@ class SnowflakeAnalytics:
             query_vec = np.array(_build_feature_vector(query_row), dtype=float)
             results = []
             for r in all_rows:
-                # Exclude self by SMILES — reliable even when molecule_id is empty
                 if r["smiles"] == query_smiles:
                     continue
                 vec = np.array(_build_feature_vector(r), dtype=float)
@@ -244,7 +328,7 @@ class SnowflakeAnalytics:
             results.sort(key=lambda x: x["similarity_score"], reverse=True)
             return results[:top_k]
         except Exception as exc:
-            logger.warning(f"Snowflake similarity search failed: {exc}")
+            logger.warning(f"Python similarity fallback failed: {exc}")
             return []
 
     # ── Read: PCA chemical space ─────────────────────────────────────────── #
@@ -432,9 +516,11 @@ class SnowflakeAnalytics:
 
     def search_reports(self, query: str, limit: int = 10) -> list[dict]:
         """
-        Keyword search over GENESIS_REPORTS using SQL ILIKE.
-        Structured to swap in Cortex Search / hybrid vector search later.
-        Returns list of {job_id, disease, matched_section, snippet, created_at}.
+        Semantic search over GENESIS_REPORTS using Snowflake Cortex
+        EMBED_TEXT_768 + VECTOR_COSINE_SIMILARITY.
+        Falls back to ILIKE keyword search when Cortex is unavailable or
+        when reports were stored before the embedding column was added.
+        Returns list of {job_id, disease, matched_section, snippet, score, created_at}.
         """
         if not is_available():
             return []
@@ -444,15 +530,56 @@ class SnowflakeAnalytics:
         try:
             with get_connection() as conn:
                 cur = conn.cursor()
-                like = f"%{query.strip()}%"
 
+                # Primary: Cortex semantic search
+                try:
+                    cur.execute(
+                        f"""
+                        WITH q AS (
+                            SELECT SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', %s) AS embedding
+                        )
+                        SELECT
+                            r.job_id, r.disease, r.created_at,
+                            VECTOR_COSINE_SIMILARITY(r.report_embedding, q.embedding) AS score,
+                            'semantic' AS matched_section,
+                            SUBSTR(r.report_text, 1, 300) AS snippet
+                        FROM GENESIS_REPORTS r
+                        CROSS JOIN q
+                        WHERE r.report_embedding IS NOT NULL
+                        ORDER BY score DESC
+                        LIMIT {int(limit)}
+                        """,
+                        (query.strip(),),
+                    )
+                    rows = cur.fetchall()
+                    if rows:
+                        cur.close()
+                        return [
+                            {
+                                "job_id":          r[0],
+                                "disease":         r[1],
+                                "created_at":      str(r[2]) if r[2] else None,
+                                "score":           round(float(r[3]), 4) if r[3] is not None else 0.0,
+                                "matched_section": r[4],
+                                "snippet":         r[5],
+                            }
+                            for r in rows
+                        ]
+                    logger.info("No embedded reports found; falling back to ILIKE")
+                except Exception as cortex_exc:
+                    logger.warning(
+                        f"Cortex semantic search failed ({cortex_exc}); falling back to ILIKE"
+                    )
+
+                # Fallback: ILIKE keyword search
+                like = f"%{query.strip()}%"
                 cur.execute(
                     f"""
                     SELECT
                         job_id, disease, created_at,
                         CASE
-                            WHEN report_text       ILIKE %s THEN 'report_text'
-                            WHEN pathway_summary   ILIKE %s THEN 'pathway_summary'
+                            WHEN report_text        ILIKE %s THEN 'report_text'
+                            WHEN pathway_summary    ILIKE %s THEN 'pathway_summary'
                             WHEN molecule_rationale ILIKE %s THEN 'molecule_rationale'
                             ELSE 'report_text'
                         END AS matched_section,
@@ -477,7 +604,6 @@ class SnowflakeAnalytics:
                 results = [dict(zip(cols, r)) for r in cur.fetchall()]
                 cur.close()
 
-            # Normalise created_at to string
             for r in results:
                 if r.get("created_at"):
                     r["created_at"] = str(r["created_at"])
